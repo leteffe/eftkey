@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import dotenv from 'dotenv';
 import { createTerminal, getTerminal, loadPairingFromDisk, savePairingToDisk, subscribeLogs, LogEvent, recreateTerminal } from './paytec';
+import { getOrCreateTerminal, pairTerminal, getPairing as getPairingById, listTerminals, subscribeAll } from './terminalManager';
 
 dotenv.config();
 
@@ -43,6 +44,21 @@ app.get('/pairing', (_req, res) => {
   }
 });
 
+// Multi-terminal: list known ids (in-memory)
+app.get('/terminals', (_req, res) => {
+  res.json({ ids: listTerminals() });
+});
+
+// Multi-terminal: get pairing by id
+app.get('/pairing/:id', async (req, res) => {
+  try {
+    const info = await getPairingById(req.params.id);
+    res.json(info);
+  } catch (e) {
+    res.status(500).json({ error: 'terminal_not_ready' });
+  }
+});
+
 // Server-Sent Events: stream logs
 app.get('/logs', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
@@ -57,6 +73,20 @@ app.get('/logs', (req, res) => {
   req.on('close', () => {
     unsub();
   });
+});
+
+// Multi-terminal: per-id logs
+app.get('/logs/:id', (req, res) => {
+  const id = req.params.id;
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  const unsub = subscribeAll((evt) => {
+    if (evt.id !== id) return;
+    res.write(`event: ${evt.type}\n`);
+    res.write(`data: ${JSON.stringify(evt.payload ?? null)}\n\n`);
+  });
+  req.on('close', () => { unsub(); });
 });
 
 app.post('/pair', async (req, res) => {
@@ -102,6 +132,20 @@ app.post('/pair', async (req, res) => {
   }
 });
 
+// Multi-terminal: pair by id
+app.post('/pair/:id', async (req, res) => {
+  const { code } = req.body || {};
+  const id = req.params.id;
+  if (!id) return res.status(400).json({ error: 'id_required' });
+  if (!code || typeof code !== 'string') return res.status(400).json({ error: 'code_required' });
+  try {
+    await pairTerminal(id, code, 'eftkey POS');
+    return res.json({ ok: true, id });
+  } catch (e) {
+    return res.status(500).json({ error: 'pair_failed' });
+  }
+});
+
 // Activate terminal (some terminals require activation before trx)
 app.post('/activate', (_req, res) => {
   try {
@@ -109,6 +153,20 @@ app.post('/activate', (_req, res) => {
     trm.setOnActivationSucceeded(() => console.log('[eftkey] activation succeeded'));
     trm.setOnActivationFailed(() => console.log('[eftkey] activation failed'));
     trm.activate();
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'activate_failed' });
+  }
+});
+
+// Multi-terminal: activate by id
+app.post('/activate/:id', async (req, res) => {
+  try {
+    const trm: any = await getOrCreateTerminal(req.params.id);
+    trm.setOnActivationSucceeded?.(() => console.log(`[eftkey] activation succeeded id=${req.params.id}`));
+    trm.setOnActivationFailed?.(() => console.log(`[eftkey] activation failed id=${req.params.id}`));
+    trm.activate?.();
     return res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -132,6 +190,20 @@ app.post('/transaction/account-verification', (req, res) => {
   }
 });
 
+// Multi-terminal: AV by id
+app.post('/transaction/:id/account-verification', async (req, res) => {
+  try {
+    const trm: any = await getOrCreateTerminal(req.params.id);
+    const payload: any = { TrxFunction: trm.TransactionFunctions.ACCOUNT_VERIFICATION };
+    if (req.body && req.body.RecOrderRef) payload.RecOrderRef = req.body.RecOrderRef;
+    trm.startTransaction(payload);
+    return res.json({ ok: true, id: req.params.id, started: 'ACCOUNT_VERIFICATION' });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'start_failed' });
+  }
+});
+
 // Start PURCHASE transaction
 app.post('/transaction/purchase', (req, res) => {
   try {
@@ -148,6 +220,24 @@ app.post('/transaction/purchase', (req, res) => {
     if (RecOrderRef) payload.RecOrderRef = RecOrderRef;
     trm.startTransaction(payload);
     return res.json({ ok: true, started: 'PURCHASE' });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'start_failed' });
+  }
+});
+
+// Multi-terminal: PURCHASE by id
+app.post('/transaction/:id/purchase', async (req, res) => {
+  try {
+    const trm: any = await getOrCreateTerminal(req.params.id);
+    const { AmtAuth, TrxCurrC = 756, RecOrderRef } = req.body || {};
+    if (typeof AmtAuth !== 'number' || AmtAuth <= 0) {
+      return res.status(400).json({ error: 'AmtAuth_required_minor_units' });
+    }
+    const payload: any = { TrxFunction: trm.TransactionFunctions.PURCHASE, TrxCurrC, AmtAuth };
+    if (RecOrderRef) payload.RecOrderRef = RecOrderRef;
+    trm.startTransaction(payload);
+    return res.json({ ok: true, id: req.params.id, started: 'PURCHASE' });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: 'start_failed' });
@@ -263,6 +353,69 @@ subscribeLogs((evt) => {
 
   const payload = evt.payload || {};
   appendResult({ ts: nowIso, type: evt.type, status: lastStatus, payload });
+});
+
+// Per-terminal PURCHASE loop
+type PurchaseLoopCfg = { enabled: boolean; amount: number; curr: number; delayMs: number; pending: boolean; lastStatus: number; cooldownUntil: number };
+const purchaseLoop = new Map<string, PurchaseLoopCfg>();
+
+app.get('/loop/:id/purchase', (req, res) => {
+  const id = req.params.id;
+  const cfg = purchaseLoop.get(id) || { enabled: false, amount: 0, curr: 756, delayMs: 2000, pending: false, lastStatus: 0, cooldownUntil: 0 };
+  res.json({ enabled: cfg.enabled, amount: cfg.amount, TrxCurrC: cfg.curr, delayMs: cfg.delayMs });
+});
+
+app.post('/loop/:id/purchase', (req, res) => {
+  const id = req.params.id;
+  const { enabled, amount, TrxCurrC, delayMs } = req.body || {};
+  const prev = purchaseLoop.get(id) || { enabled: false, amount: 0, curr: 756, delayMs: 2000, pending: false, lastStatus: 0, cooldownUntil: 0 };
+  const next: PurchaseLoopCfg = {
+    enabled: enabled !== undefined ? !!enabled : prev.enabled,
+    amount: typeof amount === 'number' && amount > 0 ? amount : prev.amount,
+    curr: typeof TrxCurrC === 'number' ? TrxCurrC : prev.curr,
+    delayMs: typeof delayMs === 'number' && delayMs >= 0 ? delayMs : prev.delayMs,
+    pending: prev.pending,
+    lastStatus: prev.lastStatus,
+    cooldownUntil: prev.cooldownUntil,
+  };
+  purchaseLoop.set(id, next);
+  return res.json({ ok: true, id, enabled: next.enabled, amount: next.amount, TrxCurrC: next.curr, delayMs: next.delayMs });
+});
+
+// Drive per-id purchase loop via id-tagged events
+subscribeAll(async (evt) => {
+  const cfg = purchaseLoop.get(evt.id);
+  if (!cfg) return;
+  const now = Date.now();
+  if (evt.type === 'status' && evt.payload && typeof evt.payload.TrmStatus === 'number') {
+    cfg.lastStatus = evt.payload.TrmStatus;
+    const SHIFT_OPEN = 0x00000001;
+    const BUSY = 0x00000004;
+    const ready = (cfg.lastStatus & SHIFT_OPEN) && !(cfg.lastStatus & BUSY);
+    if (cfg.enabled && cfg.pending && ready && now >= cfg.cooldownUntil && cfg.amount > 0) {
+      cfg.cooldownUntil = now + Math.max(500, cfg.delayMs);
+      cfg.pending = false;
+      setTimeout(async () => {
+        try {
+          const trm: any = await getOrCreateTerminal(evt.id);
+          trm.startTransaction({ TrxFunction: trm.TransactionFunctions.PURCHASE, TrxCurrC: cfg.curr, AmtAuth: cfg.amount, RecOrderRef: { OrderID: `Loop-P-${Date.now()}` } });
+          console.log(`[eftkey] auto loop purchase: id=${evt.id} amount=${cfg.amount}`);
+        } catch (e) {
+          console.error('[eftkey] auto loop purchase failed', e);
+        }
+      }, cfg.delayMs);
+    }
+  }
+  if (!cfg.enabled) return;
+  const outcomeTypes = new Set(['transactionApproved','transactionDeclined','transactionAborted','transactionTimedOut']);
+  if (outcomeTypes.has(evt.type) && evt.payload && typeof evt.payload.TrxFunction === 'number') {
+    try {
+      const trm: any = await getOrCreateTerminal(evt.id);
+      if (evt.payload.TrxFunction === trm.TransactionFunctions.PURCHASE) {
+        cfg.pending = true;
+      }
+    } catch {}
+  }
 });
 
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;

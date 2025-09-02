@@ -13,8 +13,9 @@ This document explains the architecture, key modules, endpoints, event flow, and
 
 ## Directory structure
 
-- `src/server.ts` — Express app, endpoints, SSE log streaming, loop logic
-- `src/paytec.ts` — Loads the PayTec lib, constructs terminal instance, wires callbacks, exposes log subscription
+- `src/server.ts` — Express app, endpoints, SSE log streaming, loop logic (AV global, per-terminal PURCHASE)
+- `src/paytec.ts` — Single default terminal support (backward compatibility)
+- `src/terminalManager.ts` — Multi-terminal registry, per-id persistence, id-tagged logs
 - `public/` — `index.html` GUI: pairing form, status, actions, loop controls, live log panel
 - `.data/pairing.json` — persisted pairing info
 - `ecritf-main/ecritf.js` — PayTec library
@@ -45,14 +46,21 @@ This document explains the architecture, key modules, endpoints, event flow, and
 - `POST /loop` → control loop mode `{ enabled?: boolean, delayMs?: number }`
 - `GET /logs` → Server-Sent Events stream (SSE) of `subscribeLogs` events
 
+Multi-terminal additions:
+- `GET /terminals` → `{ ids }`
+- `GET /pairing/:id`, `POST /pair/:id`, `POST /activate/:id`
+- `POST /transaction/:id/account-verification`, `POST /transaction/:id/purchase`
+- `GET /logs/:id` (SSE per terminal)
+- `GET /loop/:id/purchase`, `POST /loop/:id/purchase` → `{ enabled, amount, TrxCurrC, delayMs }`
+
 ### SSE
 
 - Writes `event: <type>` and JSON `data:` lines for each log event
 - Consumed by the GUI via `EventSource('/logs')`
 
-### Loop mode
+### Loop modes
 
-- Goal: repeatedly run ACCOUNT_VERIFICATION as soon as the terminal is ready after the previous one
+- Global AV loop: repeatedly run ACCOUNT_VERIFICATION as soon as the terminal is ready after the previous one
 - State:
   - `loopEnabled` (boolean), `loopDelayMs` (ms)
   - `loopPending` (boolean): set after AV completion outcomes (approved/declined/aborted/timed out) or receipt
@@ -75,6 +83,11 @@ This document explains the architecture, key modules, endpoints, event flow, and
   - SHIFT_OPEN = `0x00000001`
   - BUSY = `0x00000004`
 - Ready = `(TrmStatus & SHIFT_OPEN) && !(TrmStatus & BUSY)`
+
+Per-terminal PURCHASE loop:
+- Config per id: `{ enabled, amount, TrxCurrC, delayMs }`
+- Sets `pending` on PURCHASE outcomes, waits for ready + cooldown, triggers next PURCHASE with configured amount/currency
+- Driven by id-tagged events from `terminalManager.subscribeAll`
 
 ## GUI (`public/index.html`)
 

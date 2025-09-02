@@ -45,6 +45,8 @@ curl http://localhost:3000/healthz
 - Loop mode: auto-repeat ACCOUNT_VERIFICATION after a successful receipt/approval with a configurable delay.
 - Live logs: streamed via Server-Sent Events from `/logs`.
 - Results log: transaction outcomes are persisted to `.data/transactions.ndjson` (NDJSON).
+- Multi-terminal: choose a Terminal-ID in the GUI to operate on that specific instance.
+- Purchase loop (per terminal): configure amount/currency/delay for automatic PURCHASE retriggering per Terminal-ID.
 
 ## API endpoints
 
@@ -57,6 +59,15 @@ curl http://localhost:3000/healthz
 - `GET /logs` → Server-Sent Events (see GUI)
 - `GET /loop` → `{ enabled, delayMs }`
 - `POST /loop` → `{ enabled?: boolean, delayMs?: number }`
+- `GET /terminals` → `{ ids: string[] }`
+- `GET /pairing/:id` → pairing for a specific terminal
+- `POST /pair/:id` → `{ code }` pair a specific terminal
+- `POST /activate/:id` → activate specific terminal
+- `POST /transaction/:id/account-verification`
+- `POST /transaction/:id/purchase`
+- `GET /logs/:id` → SSE for a specific terminal
+- `GET /loop/:id/purchase` → read purchase loop config for id
+- `POST /loop/:id/purchase` → `{ enabled, amount, TrxCurrC, delayMs }`
 
 ## Result logging (persisted)
 
@@ -67,10 +78,24 @@ curl http://localhost:3000/healthz
   - `status`: last known `TrmStatus`
   - `payload`: full PayTec event payload (includes amounts, AID, IIN, refs if provided)
 
-## Configuration
+## Deployment & Configuration
 
+- Dev:
+
+```bash
+npm run dev
+```
+
+- Build & start:
+
+```bash
+npm run build
+npm start
+```
+
+Environment variables:
 - `PORT` (default: `3000`)
-- `DATA_DIR` (default: `.data`) directory for persisted pairing info
+- `DATA_DIR` (default: `.data`) directory for persisted pairing and logs
 
 ## Scripts
 

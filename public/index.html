@@ -26,6 +26,11 @@
   <body>
     <div class="card">
       <h1>Mit PayTec-Terminal pairen</h1>
+      <div class="row" style="margin-bottom:.5rem">
+        <label for="termId">Terminal-ID</label>
+        <input id="termId" type="text" placeholder="terminalA" style="width:160px" />
+        <button id="btnLoadPairing" type="button">Laden</button>
+      </div>
       <form id="pairForm">
         <label for="code">Pairing-Code vom Terminal</label>
         <div class="row">
@@ -68,6 +73,16 @@
           <button id="btnSaveLoop">Speichern</button>
         </div>
       </div>
+      <div style="margin-top: 1rem; display: grid; gap: .5rem;">
+        <label>Loop PURCHASE: Betrag (Minor Units), Währungscode (default 756), Verzögerung</label>
+        <div class="row">
+          <input id="loopPAmt" type="number" min="1" step="1" placeholder="1575" style="width:120px" />
+          <input id="loopPCurr" type="number" min="1" step="1" value="756" style="width:100px" />
+          <input id="loopPDelay" type="number" min="0" step="100" value="2000" style="width:120px" />
+          <input id="loopPEnabled" type="checkbox" />
+          <button id="btnSavePLoop">Speichern (Purchase Loop)</button>
+        </div>
+      </div>
     </div>
 
     <div class="card">
@@ -103,9 +118,11 @@
 
       async function fetchStatus() {
         try {
-          const res = await fetch('/pairing');
+          const id = (document.getElementById('termId').value || '').trim();
+          const url = id ? `/pairing/${encodeURIComponent(id)}` : '/pairing';
+          const res = await fetch(url);
           const data = await res.json();
-          log('GET /pairing', data);
+          log(`GET ${url}`, data);
           const status = document.getElementById('status');
           const pre = document.getElementById('pairingJson');
           if (data && data.Channel) {
@@ -123,19 +140,23 @@
         }
       }
 
+      document.getElementById('btnLoadPairing').addEventListener('click', fetchStatus);
+
       document.getElementById('pairForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const code = document.getElementById('code').value.trim();
+        const id = (document.getElementById('termId').value || '').trim();
         const btn = document.getElementById('pairBtn');
         const msg = document.getElementById('msg');
         btn.disabled = true;
         msg.textContent = 'Sende Code...';
         try {
-          const res = await fetch('/pair', {
+          const url = id ? `/pair/${encodeURIComponent(id)}` : '/pair';
+          const res = await fetch(url, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ code })
           });
-          log('POST /pair', { code });
+          log(`POST ${url}`, { code });
           if (!res.ok) throw new Error('HTTP ' + res.status);
           msg.textContent = 'Code gesendet. Bitte bestätigen Sie am Terminal.';
           setTimeout(fetchStatus, 2000);
@@ -149,7 +170,7 @@
 
       fetchStatus();
       setInterval(fetchStatus, 5000);
-      // Init loop state from server
+      // Init loop state from server (single-AV)
       (async function initLoop(){
         try {
           const r = await fetch('/loop');
@@ -158,9 +179,22 @@
           document.getElementById('loopDelay').value = String(j.delayMs ?? 2000);
         } catch {}
       })();
+      // Init purchase loop per id
+      async function initPurchaseLoop() {
+        const id = (document.getElementById('termId').value || '').trim();
+        if (!id) return;
+        try {
+          const r = await fetch(`/loop/${encodeURIComponent(id)}/purchase`);
+          const j = await r.json();
+          document.getElementById('loopPEnabled').checked = !!j.enabled;
+          if (j.amount) document.getElementById('loopPAmt').value = String(j.amount);
+          document.getElementById('loopPCurr').value = String(j.TrxCurrC ?? 756);
+          document.getElementById('loopPDelay').value = String(j.delayMs ?? 2000);
+        } catch {}
+      }
       // Subscribe to SSE logs
       try {
-        const es = new EventSource('/logs');
+        let es = new EventSource('/logs');
         const el = document.getElementById('log');
         const known = [
           'connected','disconnected','pairingSucceeded','pairingFailed','status',
@@ -183,6 +217,23 @@
         }
         es.onerror = (e) => log('sse_error');
         es.onopen = () => log('sse_open');
+
+        // Rebind SSE to per-id when terminal id changes/loaded
+        document.getElementById('btnLoadPairing').addEventListener('click', () => {
+          const id = (document.getElementById('termId').value || '').trim();
+          try { es.close(); } catch {}
+          es = new EventSource(id ? `/logs/${encodeURIComponent(id)}` : '/logs');
+          initPurchaseLoop();
+          for (const evt of known) {
+            es.addEventListener(evt, (ev) => {
+              let data = null;
+              try { data = ev.data ? JSON.parse(ev.data) : null; } catch { data = String(ev.data); }
+              log(`evt:${evt}`, data);
+              if (evt === 'connected') document.getElementById('conn').innerHTML = '<span class="ok">Verbindung: verbunden</span>';
+              if (evt === 'disconnected') document.getElementById('conn').innerHTML = '<span class="err">Verbindung: getrennt</span>';
+            });
+          }
+        });
       } catch (e) {
         log('sse_init_failed', String(e));
       }
@@ -190,8 +241,10 @@
       document.getElementById('btnActivate').addEventListener('click', async () => {
         const msg = document.getElementById('trxMsg');
         try {
-          const res = await fetch('/activate', { method: 'POST' });
-          log('POST /activate');
+          const id = (document.getElementById('termId').value || '').trim();
+          const url = id ? `/activate/${encodeURIComponent(id)}` : '/activate';
+          const res = await fetch(url, { method: 'POST' });
+          log(`POST ${url}`);
           if (!res.ok) throw new Error('HTTP ' + res.status);
           msg.textContent = 'Activation angefordert. Bitte Terminal beachten.';
         } catch (e) {
@@ -204,8 +257,10 @@
         const msg = document.getElementById('trxMsg');
         msg.textContent = 'Starte ACCOUNT_VERIFICATION...';
         try {
-          const res = await fetch('/transaction/account-verification', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ RecOrderRef: { OrderID: 'OrderAV-1' } }) });
-          log('POST /transaction/account-verification');
+          const id = (document.getElementById('termId').value || '').trim();
+          const url = id ? `/transaction/${encodeURIComponent(id)}/account-verification` : '/transaction/account-verification';
+          const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ RecOrderRef: { OrderID: 'OrderAV-1' } }) });
+          log(`POST ${url}`);
           if (!res.ok) throw new Error('HTTP ' + res.status);
           msg.textContent = 'ACCOUNT_VERIFICATION gestartet. Bitte Terminal beachten.';
         } catch (e) {
@@ -220,8 +275,10 @@
         if (!amt || amt <= 0) { msg.innerHTML = '<span class=err>Betrag (Minor Units) erforderlich</span>'; return; }
         msg.textContent = 'Starte PURCHASE...';
         try {
-          const res = await fetch('/transaction/purchase', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ AmtAuth: amt, TrxCurrC: 756, RecOrderRef: { OrderID: 'OrderP-1' } }) });
-          log('POST /transaction/purchase', { AmtAuth: amt, TrxCurrC: 756 });
+          const id = (document.getElementById('termId').value || '').trim();
+          const url = id ? `/transaction/${encodeURIComponent(id)}/purchase` : '/transaction/purchase';
+          const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ AmtAuth: amt, TrxCurrC: 756, RecOrderRef: { OrderID: 'OrderP-1' } }) });
+          log(`POST ${url}`, { AmtAuth: amt, TrxCurrC: 756 });
           if (!res.ok) throw new Error('HTTP ' + res.status);
           msg.textContent = 'PURCHASE gestartet. Bitte Terminal beachten.';
         } catch (e) {
@@ -240,6 +297,24 @@
           log('Loop updated');
         } catch (e) {
           log('POST /loop failed', String(e));
+        }
+      });
+
+      document.getElementById('btnSavePLoop').addEventListener('click', async () => {
+        const id = (document.getElementById('termId').value || '').trim();
+        if (!id) { log('purchase loop requires Terminal-ID'); return; }
+        const enabled = document.getElementById('loopPEnabled').checked;
+        const amount = parseInt(document.getElementById('loopPAmt').value || '0', 10) || 0;
+        const TrxCurrC = parseInt(document.getElementById('loopPCurr').value || '756', 10) || 756;
+        const delayMs = parseInt(document.getElementById('loopPDelay').value || '0', 10) || 0;
+        const url = `/loop/${encodeURIComponent(id)}/purchase`;
+        log(`POST ${url}`, { enabled, amount, TrxCurrC, delayMs });
+        try {
+          const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled, amount, TrxCurrC, delayMs }) });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          log('Purchase loop updated');
+        } catch (e) {
+          log('purchase loop update failed', String(e));
         }
       });
 
