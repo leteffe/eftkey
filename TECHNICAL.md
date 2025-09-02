@@ -1,81 +1,100 @@
 # Technical Documentation
 
-This document explains the architecture, key modules, endpoints, event flow, and implementation details of the eftkey MVP.
+This document explains the architecture, key modules, endpoints, event flow, and implementation details of the eftkey multi-terminal application.
 
 ## Overview
 
 - Stack: Node.js + TypeScript, Express, ts-node + nodemon for dev
-- PayTec library: local `ecritf-main/ecritf.js` (ES module default export `POSTerminal`)
+- PayTec library: Official GitHub package `github:PayTecAG/ecritf` (POSTerminal instances)
 - Transport: Cloud via SMQ WebSocket `wss://ecritf.paytec.ch/smq.lsp` (handled by the PayTec lib)
-- Persistence: JSON file `.data/pairing.json`
-- Results persistence: NDJSON `.data/transactions.ndjson` with full outcome payloads
-- GUI: static HTML/JS served from `public/` with SSE log streaming
+- Persistence: Per-terminal JSON files `.data/pairings/{terminalId}.json`
+- Results persistence: NDJSON `.data/transactions.ndjson` with terminal ID and full outcome payloads
+- GUI: static HTML/JS served from `public/` with ID-filtered SSE log streaming
+- Multi-terminal: Each terminal ID maintains its own pairing, connection state, and loop configurations
 
 ## Directory structure
 
-- `src/server.ts` — Express app, endpoints, SSE log streaming, loop logic (AV global, per-terminal PURCHASE)
-- `src/paytec.ts` — Single default terminal support (backward compatibility)
-- `src/terminalManager.ts` — Multi-terminal registry, per-id persistence, id-tagged logs
-- `public/` — `index.html` GUI: pairing form, status, actions, loop controls, live log panel
-- `.data/pairing.json` — persisted pairing info
-- `ecritf-main/ecritf.js` — PayTec library
+- `src/server.ts` — Express app, ID-based endpoints, SSE log streaming, per-terminal loop logic
+- `src/terminalManager.ts` — Multi-terminal registry, per-id persistence, id-tagged logs, terminal state management
+- `public/` — `index.html` GUI: terminal selection, pairing form, status, actions, loop controls, live log panel
+- `.data/pairings/{terminalId}.json` — persisted pairing info per terminal
+- `.data/transactions.ndjson` — transaction outcomes with terminal ID
+- `package.json` — dependencies including `github:PayTecAG/ecritf`
 
-## PayTec integration (`src/paytec.ts`)
+## Terminal Manager (`src/terminalManager.ts`)
 
-- Loads local `ecritf-main/ecritf.js` using CommonJS require from Node (compiled TS)
-- Constructs `new POSTerminal(pairing, options)` with:
+- Multi-terminal registry with per-ID POSTerminal instances
+- Loads official PayTec library: `github:PayTecAG/ecritf`
+- Constructs `new POSTerminal(pairing, options)` per terminal ID with:
   - AutoConnect, AutoReconnect
   - Tuned intervals/timeouts to reduce disconnects
-- Exposes a minimal API:
-  - `createTerminal()`, `getTerminal()`
-  - `loadPairingFromDisk()`, `savePairingToDisk()`
-  - Log event bus: `subscribeLogs(cb)`; emits structured events from PayTec callbacks:
-    - `connected`, `disconnected`, `pairingSucceeded`, `pairingFailed`, `status`, `messageSent`, `messageReceived`, `error`, `activationSucceeded`, `activationFailed`, `transactionApproved`, `transactionDeclined`, `transactionAborted`, `transactionTimedOut`, `transactionConfirmationSucceeded`, `transactionConfirmationFailed`, `receipt`
+- Exposes multi-terminal API:
+  - `getOrCreateTerminal(id)` - creates/retrieves terminal instance
+  - `pairTerminal(id, code, name)` - pairs specific terminal
+  - `getPairing(id)` - retrieves pairing info for terminal
+  - `listTerminals()` - returns all known terminal IDs
+  - `getTerminalState(id)` - returns loop configuration state
+- Log event bus: `subscribeAll(cb)`; emits ID-tagged events from PayTec callbacks:
+  - `{ id: string, type: string, payload?: any }`
+  - Events: `connected`, `disconnected`, `pairingSucceeded`, `pairingFailed`, `status`, `messageSent`, `messageReceived`, `error`, `activationSucceeded`, `activationFailed`, `transactionApproved`, `transactionDeclined`, `transactionAborted`, `transactionTimedOut`, `transactionConfirmationSucceeded`, `transactionConfirmationFailed`, `receipt`
+- Per-terminal persistence: `.data/pairings/{terminalId}.json`
 
 ## Server (`src/server.ts`)
 
-### Endpoints
+### Core Endpoints
 
 - `GET /healthz` → health check
-- `GET /pairing` → returns current pairing info (or null)
-- `POST /pair` → `{ code }` triggers `trm.pair(code, 'eftkey POS')` and persists on success
-- `POST /activate` → `trm.activate()`
-- `POST /transaction/account-verification` → starts ACCOUNT_VERIFICATION
-- `POST /transaction/purchase` → starts PURCHASE with `{ AmtAuth, TrxCurrC?, RecOrderRef? }`
-- `GET /loop` → `{ enabled, delayMs }`
-- `POST /loop` → control loop mode `{ enabled?: boolean, delayMs?: number }`
-- `GET /logs` → Server-Sent Events stream (SSE) of `subscribeLogs` events
+- `GET /terminals` → `{ ids: string[] }` - list all known terminal IDs
 
-Multi-terminal additions:
-- `GET /terminals` → `{ ids }`
-- `GET /pairing/:id`, `POST /pair/:id`, `POST /activate/:id`
-- `POST /transaction/:id/account-verification`, `POST /transaction/:id/purchase`
-- `GET /logs/:id` (SSE per terminal)
-- `GET /loop/:id/purchase`, `POST /loop/:id/purchase` → `{ enabled, amount, TrxCurrC, delayMs }`
+### Terminal-specific Endpoints (replace `:id` with terminal ID)
+
+- `GET /pairing/:id` → returns pairing info for specific terminal
+- `POST /pair/:id` → `{ code }` pairs specific terminal using `pairTerminal(id, code, name)`
+- `POST /activate/:id` → activates specific terminal
+- `POST /transaction/:id/account-verification` → starts ACCOUNT_VERIFICATION on specific terminal
+- `POST /transaction/:id/purchase` → starts PURCHASE with `{ AmtAuth, TrxCurrC?, RecOrderRef? }` on specific terminal
+- `GET /logs/:id` → Server-Sent Events stream (SSE) filtered by terminal ID
+
+### Loop Configuration (per terminal)
+
+- `GET /loop/:id` → `{ enabled: boolean, delayMs: number }` - ACCOUNT_VERIFICATION loop config
+- `POST /loop/:id` → `{ enabled?: boolean, delayMs?: number }` - configure ACCOUNT_VERIFICATION loop
+- `GET /loop/:id/purchase` → `{ enabled: boolean, amount: number, currency: number, delayMs: number }` - PURCHASE loop config
+- `POST /loop/:id/purchase` → `{ enabled?: boolean, amount?: number, currency?: number, delayMs?: number }` - configure PURCHASE loop
+
+### Diagnostics
+
+- `GET /diagnostics` → `{ ok: boolean, serverTime: string, uptimeSec: number, cloud: object }` - global connectivity test
+- `GET /diagnostics/terminal/:id` → `{ ok: boolean, id: string, paired: boolean, status: number, ready: boolean }` - terminal-specific status
 
 ### SSE
 
 - Writes `event: <type>` and JSON `data:` lines for each log event
-- Consumed by the GUI via `EventSource('/logs')`
+- Consumed by the GUI via `EventSource('/logs/:id')` (filtered by terminal ID)
+- All events are ID-tagged from `terminalManager.subscribeAll`
 
-### Loop modes
+### Per-terminal Loop modes
 
-- Global AV loop: repeatedly run ACCOUNT_VERIFICATION as soon as the terminal is ready after the previous one
-- State:
-  - `loopEnabled` (boolean), `loopDelayMs` (ms)
-  - `loopPending` (boolean): set after AV completion outcomes (approved/declined/aborted/timed out) or receipt
-  - Tracks latest `status.TrmStatus`; considers ready when SHIFT_OPEN set and BUSY not set
-- On ready and pending, sends next AV after `loopDelayMs` and a short cooldown
+- **ACCOUNT_VERIFICATION loop**: repeatedly run ACCOUNT_VERIFICATION as soon as the terminal is ready after the previous one
+- **PURCHASE loop**: repeatedly run PURCHASE with configured amount/currency after completion
+- Per-terminal state management:
+  - `loopAVEnabled`, `loopAVDelayMs`, `loopAVPending` (ACCOUNT_VERIFICATION)
+  - `loopPurchaseEnabled`, `loopPurchaseAmount`, `loopPurchaseTrxCurrC`, `loopPurchaseDelayMs`, `loopPurchasePending` (PURCHASE)
+  - `lastStatus`, `cooldownUntil` (shared)
+- Loop triggers on completion outcomes: approved/declined/aborted/timed out or receipt
+- Waits for terminal ready state (SHIFT_OPEN set and BUSY not set) plus cooldown before next transaction
 
 ### Pairing resilience
 
-- `/pair` retries once after recreating the terminal when SMQ/TID errors are detected (e.g., `tid not found`, `unsubscribe`, `onmsg`).
+- Each terminal maintains its own pairing state and connection
+- Pairing info is automatically loaded from `.data/pairings/{terminalId}.json` on startup
+- Failed pairings can be retried by sending a new pairing code
 
 ### Outcome persistence
 
-- Subscribes to the log bus and persists only outcome events to `.data/transactions.ndjson`:
+- Subscribes to the ID-tagged log bus and persists only outcome events to `.data/transactions.ndjson`:
   - types: approved, declined, aborted, timed out, confirmation succeeded/failed
-  - record: `{ ts, type, status, payload }`
+  - record: `{ ts: string, terminalId: string, type: string, status: number, payload: object }`
 
 ### Status readiness
 
@@ -83,30 +102,29 @@ Multi-terminal additions:
   - SHIFT_OPEN = `0x00000001`
   - BUSY = `0x00000004`
 - Ready = `(TrmStatus & SHIFT_OPEN) && !(TrmStatus & BUSY)`
-
-Per-terminal PURCHASE loop:
-- Config per id: `{ enabled, amount, TrxCurrC, delayMs }`
-- Sets `pending` on PURCHASE outcomes, waits for ready + cooldown, triggers next PURCHASE with configured amount/currency
-- Driven by id-tagged events from `terminalManager.subscribeAll`
+- Each terminal tracks its own status independently
 
 ## GUI (`public/index.html`)
 
-- Pairing form posts to `/pair`
-- Status card shows pairing info and live connection state (“verbunden/ getrennt”) from SSE `connected`/`disconnected`
-- Actions:
-  - Activate button → `/activate`
-  - ACCOUNT_VERIFICATION button → `/transaction/account-verification`
-  - PURCHASE form → `/transaction/purchase`
-- Loop controls:
-  - Checkbox to enable/disable
-  - Delay (ms)
-  - Save posts to `/loop`
-- Live log pane subscribes to SSE and appends events with timestamps
+- **Terminal selection**: Enter terminal ID and click "Laden" to load configuration
+- **Pairing form**: Posts to `/pair/:id` for specific terminal
+- **Status card**: Shows pairing info, live connection state, and connection diagnostics
+- **Actions** (per terminal):
+  - Activate button → `/activate/:id`
+  - ACCOUNT_VERIFICATION button → `/transaction/:id/account-verification`
+  - PURCHASE form → `/transaction/:id/purchase`
+- **Loop controls** (per terminal):
+  - ACCOUNT_VERIFICATION loop: checkbox, delay (ms), save to `/loop/:id`
+  - PURCHASE loop: checkbox, amount, currency, delay (ms), save to `/loop/:id/purchase`
+- **Connection diagnostics**: "Verbindung testen" button tests cloud connectivity
+- **Live log pane**: Subscribes to SSE `/logs/:id` and appends ID-filtered events with timestamps
 
 ## Persistence
 
-- Pairing info stored at `.data/pairing.json`
-- Loaded on startup; app attempts to auto-connect
+- **Pairing data**: `.data/pairings/{terminalId}.json` - one file per terminal ID
+- **Transaction outcomes**: `.data/transactions.ndjson` - all outcomes with terminal ID
+- **Terminal state**: In-memory per-terminal loop configurations and status tracking
+- Loaded on startup; app attempts to auto-connect each known terminal
 
 ## Build and run
 
@@ -116,12 +134,17 @@ Per-terminal PURCHASE loop:
 
 ## Known behaviors and caveats
 
-- Pairing info remaining in `.data/pairing.json` shows as “Gepairt” in the GUI; live connection state is shown separately.
-- The cloud transport and device status transitions are handled by the PayTec library; intermittent disconnects can happen depending on network/device.
-- Loop mode avoids sending while terminal is busy; if you still see “Terminal is busy”, increase `delayMs` or wait for ready status.
+- Each terminal ID maintains its own pairing state and connection; pairing info in `.data/pairings/{terminalId}.json` shows as "Gepairt" in the GUI
+- Live connection state is shown separately and can be tested via diagnostics
+- The cloud transport and device status transitions are handled by the PayTec library; intermittent disconnects can happen depending on network/device
+- Loop modes avoid sending while terminal is busy; if you still see "Terminal is busy", increase `delayMs` or wait for ready status
+- Channel IDs can change when terminals restart or are re-paired; this is normal behavior
+- Multi-terminal support allows independent operation of different terminals with separate loop configurations
 
 ## Extensibility
 
 - Add more endpoints as needed (e.g., receipts retrieval, other transaction types)
 - Enhance GUI (framework, UX) or expose WebSocket for richer client updates
-- Persist more runtime state if required (e.g., loop settings) in a config file
+- Extend terminal state persistence to include loop settings in config files
+- Add terminal grouping or batch operations for multiple terminals
+- Implement terminal health monitoring and automatic reconnection strategies

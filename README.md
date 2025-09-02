@@ -1,6 +1,6 @@
-# MVP eftkey
+# eftkey
 
-Minimal Node.js + TypeScript app to pair with a PayTec POS terminal via the cloud, send pairing codes, run basic transactions, and view logs in a simple GUI.
+Multi-terminal Node.js + TypeScript app to pair with PayTec POS terminals via the cloud, send pairing codes, run transactions, and manage multiple terminals with individual loop configurations.
 
 Uses the official PayTec ECR interface: [PayTecAG/ecritf](https://github.com/PayTecAG/ecritf).
 
@@ -22,11 +22,12 @@ npm run dev
 
 - Browser: http://localhost:3000
 
-4) Pairing
+4) Multi-terminal setup
 
-- Enter the pairing code shown on the terminal (e.g., 6017087) and submit.
-- Check logs for: `[eftkey] pairing succeeded`.
-- Pairing info is persisted to `.data/pairing.json` and loaded on startup.
+- **Terminal-ID wählen**: Enter a terminal ID (e.g., `default`, `99`, `1`) and click "Laden"
+- **Pairing**: Enter the pairing code shown on the terminal (e.g., 6017087) and submit
+- **Automatic loading**: Pairing info is persisted to `.data/pairings/{terminalId}.json` and loaded on startup
+- **Multiple terminals**: Each terminal ID has its own pairing, loop settings, and transaction history
 
 5) Healthcheck
 
@@ -36,47 +37,59 @@ curl http://localhost:3000/healthz
 
 ## GUI features
 
-- Pairing form: send code to `/pair`.
-- Status card: current pairing info, terminal status.
-- Actions:
-  - Terminal aktivieren → `/activate`
-  - ACCOUNT_VERIFICATION → `/transaction/account-verification`
-  - PURCHASE → `/transaction/purchase` (enter amount in minor units, e.g., 1575 = CHF 15.75)
-- Loop mode: auto-repeat ACCOUNT_VERIFICATION after a successful receipt/approval with a configurable delay.
-- Live logs: streamed via Server-Sent Events from `/logs`.
-- Results log: transaction outcomes are persisted to `.data/transactions.ndjson` (NDJSON).
-- Multi-terminal: choose a Terminal-ID in the GUI to operate on that specific instance.
-- Purchase loop (per terminal): configure amount/currency/delay for automatic PURCHASE retriggering per Terminal-ID.
+- **Terminal selection**: Choose terminal ID and load its configuration
+- **Pairing form**: Send pairing code to specific terminal
+- **Status card**: Current pairing info, terminal status, connection diagnostics
+- **Actions** (per terminal):
+  - Terminal aktivieren → `/activate/:id`
+  - ACCOUNT_VERIFICATION → `/transaction/:id/account-verification`
+  - PURCHASE → `/transaction/:id/purchase` (enter amount in minor units, e.g., 1575 = CHF 15.75)
+- **Loop modes** (per terminal):
+  - ACCOUNT_VERIFICATION loop: auto-repeat after successful receipt/approval/decline/abort/timeout
+  - PURCHASE loop: configure amount/currency/delay for automatic PURCHASE retriggering
+- **Live logs**: Streamed via Server-Sent Events from `/logs/:id` (filtered by terminal)
+- **Connection diagnostics**: Test cloud connectivity and terminal readiness
+- **Results log**: Transaction outcomes persisted to `.data/transactions.ndjson` with terminal ID
 
 ## API endpoints
 
+### Core endpoints
 - `GET /healthz` → `{ ok: true }`
-- `GET /pairing` → current pairing JSON or `null`
-- `POST /pair` → `{ code: string }` pairs using `trm.pair(code, 'eftkey POS')`
-- `POST /activate` → triggers terminal activation
-- `POST /transaction/account-verification` → starts ACCOUNT_VERIFICATION
-- `POST /transaction/purchase` → `{ AmtAuth: number, TrxCurrC?: number, RecOrderRef?: object }`
-- `GET /logs` → Server-Sent Events (see GUI)
-- `GET /loop` → `{ enabled, delayMs }`
-- `POST /loop` → `{ enabled?: boolean, delayMs?: number }`
-- `GET /terminals` → `{ ids: string[] }`
-- `GET /pairing/:id` → pairing for a specific terminal
-- `POST /pair/:id` → `{ code }` pair a specific terminal
+- `GET /terminals` → `{ ids: string[] }` - list all known terminal IDs
+
+### Terminal-specific endpoints (replace `:id` with terminal ID)
+- `GET /pairing/:id` → pairing JSON for specific terminal
+- `POST /pair/:id` → `{ code: string }` pair specific terminal
 - `POST /activate/:id` → activate specific terminal
-- `POST /transaction/:id/account-verification`
-- `POST /transaction/:id/purchase`
-- `GET /logs/:id` → SSE for a specific terminal
-- `GET /loop/:id/purchase` → read purchase loop config for id
-- `POST /loop/:id/purchase` → `{ enabled, amount, TrxCurrC, delayMs }`
+- `POST /transaction/:id/account-verification` → start ACCOUNT_VERIFICATION
+- `POST /transaction/:id/purchase` → `{ AmtAuth: number, TrxCurrC?: number, RecOrderRef?: object }`
+- `GET /logs/:id` → Server-Sent Events for specific terminal
+
+### Loop configuration (per terminal)
+- `GET /loop/:id` → `{ enabled: boolean, delayMs: number }` - ACCOUNT_VERIFICATION loop
+- `POST /loop/:id` → `{ enabled?: boolean, delayMs?: number }` - configure ACCOUNT_VERIFICATION loop
+- `GET /loop/:id/purchase` → `{ enabled: boolean, amount: number, currency: number, delayMs: number }` - PURCHASE loop
+- `POST /loop/:id/purchase` → `{ enabled?: boolean, amount?: number, currency?: number, delayMs?: number }` - configure PURCHASE loop
+
+### Diagnostics
+- `GET /diagnostics` → `{ ok: boolean, serverTime: string, uptimeSec: number, cloud: object }` - global connectivity test
+- `GET /diagnostics/terminal/:id` → `{ ok: boolean, id: string, paired: boolean, status: number, ready: boolean }` - terminal-specific status
 
 ## Result logging (persisted)
 
 - File: `.data/transactions.ndjson`
 - One JSON object per line with fields:
   - `ts`: ISO timestamp
+  - `terminalId`: terminal ID that generated the event
   - `type`: `transactionApproved | transactionDeclined | transactionAborted | transactionTimedOut | transactionConfirmationSucceeded | transactionConfirmationFailed`
-  - `status`: last known `TrmStatus`
+  - `status`: last known `TrmStatus` for the terminal
   - `payload`: full PayTec event payload (includes amounts, AID, IIN, refs if provided)
+
+## Data persistence
+
+- **Pairing data**: `.data/pairings/{terminalId}.json` - one file per terminal ID
+- **Transaction outcomes**: `.data/transactions.ndjson` - all outcomes with terminal ID
+- **Terminal state**: In-memory per-terminal loop configurations and status tracking
 
 ## Deployment & Configuration
 
@@ -105,10 +118,13 @@ Environment variables:
 
 ## Notes
 
-- The app uses the local PayTec library found in `ecritf-main/ecritf.js`.
-- Cloud transport endpoint is managed internally by the PayTec library (`wss://ecritf.paytec.ch/smq.lsp`).
-- Pairing and transaction logs are visible both in the terminal output and in the GUI log panel.
-- Pairing endpoint includes a safe retry that recreates the terminal on SMQ/TID errors.
+- Uses the official PayTec library from GitHub: `github:PayTecAG/ecritf`
+- Cloud transport endpoint is managed internally by the PayTec library (`wss://ecritf.paytec.ch/smq.lsp`)
+- Each terminal ID maintains its own pairing channel and connection state
+- Pairing and transaction logs are visible both in the terminal output and in the GUI log panel
+- Loop modes automatically retrigger transactions after completion (approved/declined/aborted/timeout)
+- Connection diagnostics help troubleshoot cloud connectivity issues
+- All endpoints are now ID-based for multi-terminal support
 
 ## Architecture diagram
 
@@ -120,50 +136,79 @@ flowchart LR
 
   subgraph Server[Node.js/Express]
     API["Express API\n/src/server.ts"]
-    LOGS["SSE /logs\nsubscribeLogs"]
-    LOOP["Loop mode\nAV auto-retrigger"]
-    PERSIST["Persistence\n.data/pairing.json\n.data/transactions.ndjson"]
-    LIB["PayTec lib loader\n/src/paytec.ts"]
+    TM["Terminal Manager\n/src/terminalManager.ts"]
+    LOGS["SSE /logs/:id\nsubscribeAll"]
+    LOOP["Per-terminal Loops\nAV + Purchase auto-retrigger"]
+    PERSIST["Persistence\n.data/pairings/{id}.json\n.data/transactions.ndjson"]
+    DIAG["Diagnostics\nCloud connectivity tests"]
   end
 
   subgraph PayTec
-    ECRITF["ecritf-main/ecritf.js\nPOSTerminal"]
+    ECRITF["github:PayTecAG/ecritf\nPOSTerminal instances"]
     CLOUD["SMQ Cloud\nwss://ecritf.paytec.ch/smq.lsp"]
-    TERM["POS Terminal"]
+    TERM1["POS Terminal 1"]
+    TERM2["POS Terminal 2"]
+    TERMN["POS Terminal N"]
   end
 
-  GUI -- "POST /pair, /activate, /transaction/*, /loop" --> API
-  GUI -- "EventSource /logs" --> LOGS
-  API --> LIB
-  LIB --> ECRITF
-  ECRITF <--> CLOUD <--> TERM
-  LIB --> PERSIST
+  GUI -- "POST /pair/:id, /activate/:id, /transaction/:id/*, /loop/:id" --> API
+  GUI -- "EventSource /logs/:id" --> LOGS
+  GUI -- "GET /diagnostics" --> DIAG
+  API --> TM
+  TM --> ECRITF
+  ECRITF <--> CLOUD <--> TERM1
+  ECRITF <--> CLOUD <--> TERM2
+  ECRITF <--> CLOUD <--> TERMN
+  TM --> PERSIST
   API --> PERSIST
   LOOP --> API
   LOGS --> GUI
 ```
 
-## Communication flow (high level view)
+## Communication flow (multi-terminal view)
 
 ```mermaid
 sequenceDiagram
   participant User as User
   participant GUI as Browser GUI
   participant API as eftkey API
+  participant TM as Terminal Manager
   participant Lib as PayTec Library
   participant Cloud as PayTec Cloud (SMQ)
-  participant Term as EFT Terminal
+  participant Term1 as Terminal 1
+  participant Term2 as Terminal 2
 
-  User->>GUI: Enter pairing/trigger transaction
-  GUI->>API: REST: /pair, /activate, /transaction/*
-  API->>Lib: trm.pair / trm.startTransaction
+  User->>GUI: Select terminal ID "99"
+  GUI->>API: GET /pairing/99
+  API->>TM: getPairingById("99")
+  TM-->>API: Pairing info
+  API-->>GUI: Display pairing status
+
+  User->>GUI: Enter pairing code for terminal "99"
+  GUI->>API: POST /pair/99 {code}
+  API->>TM: pairTerminal("99", code)
+  TM->>Lib: Create/get terminal instance
   Lib->>Cloud: Secure WebSocket (SMQ)
-  Cloud->>Term: Forward command
-  Term-->>Cloud: Status/Outcome/Receipt
-  Cloud-->>Lib: Responses (SMQ)
-  Lib-->>API: Callbacks (approved/declined/...)
-  API-->>GUI: SSE /logs (live updates)
-  API-->>API: Persist outcomes (.data/transactions.ndjson)
+  Cloud->>Term1: Forward pairing command
+  Term1-->>Cloud: Pairing success
+  Cloud-->>Lib: Pairing response
+  Lib-->>TM: Pairing callback
+  TM-->>API: Pairing complete
+  API-->>GUI: SSE /logs/99 (live updates)
+  API-->>API: Persist pairing (.data/pairings/99.json)
+
+  User->>GUI: Start transaction on terminal "99"
+  GUI->>API: POST /transaction/99/account-verification
+  API->>TM: getOrCreateTerminal("99")
+  TM->>Lib: trm.startTransaction
+  Lib->>Cloud: Transaction command
+  Cloud->>Term1: Forward transaction
+  Term1-->>Cloud: Transaction outcome
+  Cloud-->>Lib: Transaction response
+  Lib-->>TM: Transaction callback
+  TM-->>API: Transaction complete
+  API-->>GUI: SSE /logs/99 (transaction result)
+  API-->>API: Persist outcome (.data/transactions.ndjson)
 ```
 
 ## Git usage
@@ -173,7 +218,7 @@ Initialize and push to your repository:
 ```bash
 git init
 git add .
-git commit -m "feat: initial eftkey MVP with pairing, GUI, and loop mode"
+git commit -m "feat: multi-terminal eftkey with pairing, GUI, loops, and diagnostics"
 git branch -M main
 git remote add origin <YOUR_GIT_REMOTE_URL>
 git push -u origin main

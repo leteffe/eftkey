@@ -47,7 +47,7 @@
       <div class="muted" id="conn">Verbindung: unbekannt</div>
       <div class="row" style="margin-top:.75rem">
         <button id="btnActivate">Terminal aktivieren</button>
-        <button id="btnDiag" style="background:#6c757d">Verbindung testen</button>
+        <button id="btnDiag">Diagnose</button>
       </div>
       <pre id="pairingJson" style="display:none"></pre>
     </div>
@@ -313,11 +313,14 @@
       });
 
       document.getElementById('btnSaveLoop').addEventListener('click', async () => {
+        const id = (document.getElementById('termId').value || '').trim();
+        if (!id) { log('loop requires Terminal-ID'); return; }
         const enabled = document.getElementById('loopEnabled').checked;
         const delayMs = parseInt(document.getElementById('loopDelay').value || '0', 10) || 0;
-        log('POST /loop', { enabled, delayMs });
+        const url = `/loop/${encodeURIComponent(id)}`;
+        log(`POST ${url}`, { enabled, delayMs });
         try {
-          const r = await fetch('/loop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled, delayMs }) });
+          const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled, delayMs }) });
           if (!r.ok) throw new Error('HTTP ' + r.status);
           log('Loop updated');
         } catch (e) {

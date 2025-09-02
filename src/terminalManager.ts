@@ -132,4 +132,38 @@ export function withTerminal<T>(id: string, fn: (trm: TerminalApi) => T): Promis
   return getOrCreateTerminal(id).then(fn);
 }
 
+// Terminal state management for loops
+export type TerminalState = {
+  loopAVEnabled: boolean;
+  loopAVDelayMs: number;
+  loopAVPending: boolean;
+  loopPurchaseEnabled: boolean;
+  loopPurchaseAmount: number;
+  loopPurchaseTrxCurrC: number;
+  loopPurchaseDelayMs: number;
+  loopPurchasePending: boolean;
+  lastStatus: number;
+  cooldownUntil: number;
+};
+
+const terminalStates = new Map<string, TerminalState>();
+
+export function getTerminalState(id: string): TerminalState | undefined {
+  if (!terminalStates.has(id)) {
+    terminalStates.set(id, {
+      loopAVEnabled: false,
+      loopAVDelayMs: 2000,
+      loopAVPending: false,
+      loopPurchaseEnabled: false,
+      loopPurchaseAmount: 150,
+      loopPurchaseTrxCurrC: 756,
+      loopPurchaseDelayMs: 2000,
+      loopPurchasePending: false,
+      lastStatus: 0,
+      cooldownUntil: 0,
+    });
+  }
+  return terminalStates.get(id);
+}
+
 
