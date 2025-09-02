@@ -48,7 +48,7 @@ app.get('/logs', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
-
+  // Do not call res.flushHeaders() to avoid ts-node type error; SSE works without it
   const send = (e: LogEvent) => {
     res.write(`event: ${e.type}\n`);
     res.write(`data: ${JSON.stringify(e.payload ?? null)}\n\n`);

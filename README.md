@@ -1,6 +1,8 @@
-# eftkey
+# MVP eftkey
 
 Minimal Node.js + TypeScript app to pair with a PayTec POS terminal via the cloud, send pairing codes, run basic transactions, and view logs in a simple GUI.
+
+Uses the official PayTec ECR interface: [PayTecAG/ecritf](https://github.com/PayTecAG/ecritf).
 
 ## Quick start
 
@@ -116,7 +118,7 @@ flowchart LR
   LOGS --> GUI
 ```
 
-## Communication flow (management view)
+## Communication flow (high level view)
 
 ```mermaid
 sequenceDiagram
