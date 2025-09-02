@@ -2,6 +2,8 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs/promises';
 import dotenv from 'dotenv';
+import dns from 'dns/promises';
+import https from 'https';
 import { createTerminal, getTerminal, loadPairingFromDisk, savePairingToDisk, subscribeLogs, LogEvent, recreateTerminal } from './paytec';
 import { getOrCreateTerminal, pairTerminal, getPairing as getPairingById, listTerminals, subscribeAll } from './terminalManager';
 
@@ -87,6 +89,63 @@ app.get('/logs/:id', (req, res) => {
     res.write(`data: ${JSON.stringify(evt.payload ?? null)}\n\n`);
   });
   req.on('close', () => { unsub(); });
+});
+
+// Diagnostics: track last known status per terminal id
+const lastStatusById = new Map<string, number>();
+subscribeAll((evt) => {
+  if (evt.type === 'status' && evt.payload && typeof evt.payload.TrmStatus === 'number') {
+    lastStatusById.set(evt.id, evt.payload.TrmStatus as number);
+  }
+});
+
+// Helper: test cloud connectivity to ecritf.paytec.ch
+async function testCloudConnectivity(): Promise<any> {
+  const host = 'ecritf.paytec.ch';
+  const out: any = { host };
+  try {
+    const start = Date.now();
+    const addrs = await dns.resolve(host);
+    out.dns = { ok: true, addresses: addrs, ms: Date.now() - start };
+  } catch (e: any) {
+    out.dns = { ok: false, error: String(e && e.message ? e.message : e) };
+  }
+  out.https = await new Promise((resolve) => {
+    const started = Date.now();
+    const req = https.request({ method: 'HEAD', host, path: '/', timeout: 4000 }, (res) => {
+      resolve({ ok: true, statusCode: res.statusCode, ms: Date.now() - started });
+      res.resume();
+    });
+    req.on('timeout', () => { try { req.destroy(); } catch {} resolve({ ok: false, error: 'timeout' }); });
+    req.on('error', (err) => resolve({ ok: false, error: String(err) }));
+    req.end();
+  });
+  return out;
+}
+
+// GET /diagnostics → basic server and cloud checks
+app.get('/diagnostics', async (_req, res) => {
+  try {
+    const cloud = await testCloudConnectivity();
+    res.json({ ok: true, serverTime: new Date().toISOString(), uptimeSec: process.uptime(), cloud });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: String(e && e.message ? e.message : e) });
+  }
+});
+
+// GET /diagnostics/terminal/:id → pairing present and last status flags
+app.get('/diagnostics/terminal/:id', async (req, res) => {
+  const id = req.params.id;
+  try {
+    const pairing = await getPairingById(id);
+    const status = lastStatusById.get(id) ?? null;
+    const SHIFT_OPEN = 0x00000001;
+    const BUSY = 0x00000004;
+    const ready = typeof status === 'number' ? ((status & SHIFT_OPEN) && !(status & BUSY)) : null;
+    res.json({ ok: true, id, paired: !!pairing, status, ready });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: String(e && e.message ? e.message : e) });
+  }
 });
 
 app.post('/pair', async (req, res) => {
