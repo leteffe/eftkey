@@ -39,6 +39,7 @@
     <div class="card">
       <h1>Status</h1>
       <div id="status">Lade...</div>
+      <div class="muted" id="conn">Verbindung: unbekannt</div>
       <div class="row" style="margin-top:.75rem">
         <button id="btnActivate">Terminal aktivieren</button>
       </div>
@@ -172,6 +173,12 @@
             let data = null;
             try { data = ev.data ? JSON.parse(ev.data) : null; } catch { data = String(ev.data); }
             log(`evt:${evt}`, data);
+            if (evt === 'connected') {
+              document.getElementById('conn').innerHTML = '<span class="ok">Verbindung: verbunden</span>';
+            }
+            if (evt === 'disconnected') {
+              document.getElementById('conn').innerHTML = '<span class="err">Verbindung: getrennt</span>';
+            }
           });
         }
         es.onerror = (e) => log('sse_error');

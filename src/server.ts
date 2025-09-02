@@ -139,6 +139,9 @@ app.post('/transaction/purchase', (req, res) => {
 // Loop mode control
 let loopEnabled = false;
 let loopDelayMs = 2000;
+let loopPending = false;
+let lastStatus = 0;
+let cooldownUntil = 0;
 
 app.get('/loop', (_req, res) => {
   res.json({ enabled: loopEnabled, delayMs: loopDelayMs });
@@ -153,10 +156,15 @@ app.post('/loop', (req, res) => {
 
 // Auto-retrigger ACCOUNT_VERIFICATION after receipt
 subscribeLogs((evt) => {
-  if (!loopEnabled) return;
-  if (evt.type === 'receipt' && evt.payload && typeof evt.payload.text === 'string') {
-    const text = evt.payload.text || '';
-    if (text.includes('Account Verification') || text.includes('ACCOUNT VERIFICATION')) {
+  const now = Date.now();
+  if (evt.type === 'status' && evt.payload && typeof evt.payload.TrmStatus === 'number') {
+    lastStatus = evt.payload.TrmStatus;
+    const SHIFT_OPEN = 0x00000001;
+    const BUSY = 0x00000004;
+    const ready = (lastStatus & SHIFT_OPEN) && !(lastStatus & BUSY);
+    if (loopEnabled && loopPending && ready && now >= cooldownUntil) {
+      cooldownUntil = now + Math.max(500, loopDelayMs);
+      loopPending = false;
       setTimeout(() => {
         try {
           const trm: any = getTerminal();
@@ -168,17 +176,45 @@ subscribeLogs((evt) => {
       }, loopDelayMs);
     }
   }
-  // Also trigger on approved transaction if it was ACCOUNT_VERIFICATION
-  if (evt.type === 'transactionApproved' && evt.payload && evt.payload.TrxFunction) {
+
+  if (!loopEnabled) return;
+  // Mark pending when finishing an AV (receipt or approved), actual send waits for ready status
+  if (evt.type === 'receipt' && evt.payload && typeof evt.payload.text === 'string') {
+    const text = evt.payload.text || '';
+    if (text.includes('Account Verification') || text.includes('ACCOUNT VERIFICATION')) {
+      loopPending = true;
+    }
+  }
+  if (evt.type === 'transactionApproved' && evt.payload && typeof evt.payload.TrxFunction === 'number') {
     try {
       const trm: any = getTerminal();
       if (evt.payload.TrxFunction === trm.TransactionFunctions.ACCOUNT_VERIFICATION) {
-        setTimeout(() => {
-          try {
-            trm.startTransaction({ TrxFunction: trm.TransactionFunctions.ACCOUNT_VERIFICATION, RecOrderRef: { OrderID: 'Loop-AV' } });
-            console.log('[eftkey] auto loop (approved): ACCOUNT_VERIFICATION started');
-          } catch (e) { console.error('[eftkey] auto loop (approved) failed', e); }
-        }, loopDelayMs);
+        loopPending = true;
+      }
+    } catch {}
+  }
+  // Keep loop on declined/aborted/timeouts for ACCOUNT_VERIFICATION
+  if (evt.type === 'transactionDeclined' && evt.payload && typeof evt.payload.TrxFunction === 'number') {
+    try {
+      const trm: any = getTerminal();
+      if (evt.payload.TrxFunction === trm.TransactionFunctions.ACCOUNT_VERIFICATION) {
+        loopPending = true;
+      }
+    } catch {}
+  }
+  if (evt.type === 'transactionAborted' && evt.payload && typeof evt.payload.TrxFunction === 'number') {
+    try {
+      const trm: any = getTerminal();
+      if (evt.payload.TrxFunction === trm.TransactionFunctions.ACCOUNT_VERIFICATION) {
+        loopPending = true;
+      }
+    } catch {}
+  }
+  if (evt.type === 'transactionTimedOut' && evt.payload && typeof evt.payload.TrxFunction === 'number') {
+    try {
+      const trm: any = getTerminal();
+      if (evt.payload.TrxFunction === trm.TransactionFunctions.ACCOUNT_VERIFICATION) {
+        loopPending = true;
       }
     } catch {}
   }
