@@ -120,3 +120,11 @@ export async function loadPairingFromDisk(): Promise<PairingInfo | undefined> {
 export async function savePairingToDisk(data: PairingInfo): Promise<void> {
   await fs.writeFile(PAIRING_FILE, JSON.stringify(data, null, 2), 'utf8');
 }
+
+export async function recreateTerminal(): Promise<void> {
+  // Best-effort: drop reference and create a fresh instance with persisted pairing
+  try {
+    terminalSingleton = null;
+  } catch {}
+  await createTerminal();
+}

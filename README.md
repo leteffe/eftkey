@@ -42,6 +42,7 @@ curl http://localhost:3000/healthz
   - PURCHASE → `/transaction/purchase` (enter amount in minor units, e.g., 1575 = CHF 15.75)
 - Loop mode: auto-repeat ACCOUNT_VERIFICATION after a successful receipt/approval with a configurable delay.
 - Live logs: streamed via Server-Sent Events from `/logs`.
+- Results log: transaction outcomes are persisted to `.data/transactions.ndjson` (NDJSON).
 
 ## API endpoints
 
@@ -54,6 +55,15 @@ curl http://localhost:3000/healthz
 - `GET /logs` → Server-Sent Events (see GUI)
 - `GET /loop` → `{ enabled, delayMs }`
 - `POST /loop` → `{ enabled?: boolean, delayMs?: number }`
+
+## Result logging (persisted)
+
+- File: `.data/transactions.ndjson`
+- One JSON object per line with fields:
+  - `ts`: ISO timestamp
+  - `type`: `transactionApproved | transactionDeclined | transactionAborted | transactionTimedOut | transactionConfirmationSucceeded | transactionConfirmationFailed`
+  - `status`: last known `TrmStatus`
+  - `payload`: full PayTec event payload (includes amounts, AID, IIN, refs if provided)
 
 ## Configuration
 
@@ -71,3 +81,28 @@ curl http://localhost:3000/healthz
 - The app uses the local PayTec library found in `ecritf-main/ecritf.js`.
 - Cloud transport endpoint is managed internally by the PayTec library (`wss://ecritf.paytec.ch/smq.lsp`).
 - Pairing and transaction logs are visible both in the terminal output and in the GUI log panel.
+- Pairing endpoint includes a safe retry that recreates the terminal on SMQ/TID errors.
+
+## Git usage
+
+Initialize and push to your repository:
+
+```bash
+git init
+git add .
+git commit -m "feat: initial eftkey MVP with pairing, GUI, and loop mode"
+git branch -M main
+git remote add origin <YOUR_GIT_REMOTE_URL>
+git push -u origin main
+```
+
+Use feature branches for changes:
+
+```bash
+git checkout -b feat/transaction-endpoints
+# ...changes...
+git commit -m "feat: add purchase endpoint"
+git push -u origin feat/transaction-endpoints
+```
+
+See `TECHNICAL.md` for a deeper technical overview.

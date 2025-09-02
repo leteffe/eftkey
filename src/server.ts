@@ -1,7 +1,8 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs/promises';
 import dotenv from 'dotenv';
-import { createTerminal, getTerminal, loadPairingFromDisk, savePairingToDisk, subscribeLogs, LogEvent } from './paytec';
+import { createTerminal, getTerminal, loadPairingFromDisk, savePairingToDisk, subscribeLogs, LogEvent, recreateTerminal } from './paytec';
 
 dotenv.config();
 
@@ -76,8 +77,25 @@ app.post('/pair', async (req, res) => {
     trm.setOnPairingFailed(() => {
       console.log('[eftkey] pairing failed');
     });
-    trm.pair(code, 'eftkey POS');
-    return res.json({ ok: true });
+    try {
+      trm.pair(code, 'eftkey POS');
+      return res.json({ ok: true });
+    } catch (err: any) {
+      const msg = String(err && err.stack ? err.stack : err);
+      if (msg.includes('tid not found') || msg.includes('unsubscribe') || msg.includes('onmsg')) {
+        console.warn('[eftkey] pair encountered SMQ error, recreating terminal and retrying once');
+        await recreateTerminal();
+        const trm2 = getTerminal();
+        trm2.setOnPairingSucceeded(async () => {
+          console.log('[eftkey] pairing succeeded (after recreate)');
+          try { const data = trm2.getPairingInfo(); await savePairingToDisk(data); } catch {}
+        });
+        trm2.setOnPairingFailed(() => console.log('[eftkey] pairing failed (after recreate)'));
+        trm2.pair(code, 'eftkey POS');
+        return res.json({ ok: true, retried: true });
+      }
+      throw err;
+    }
   } catch (e: any) {
     console.error(e);
     return res.status(500).json({ error: 'pair_failed' });
@@ -218,6 +236,33 @@ subscribeLogs((evt) => {
       }
     } catch {}
   }
+});
+
+// Persist ONLY outcome events (approved/declined/aborted/timed out/confirmation)
+const resultsFile = path.resolve(process.cwd(), '.data', 'transactions.ndjson');
+async function appendResult(entry: any) {
+  try {
+    await fs.mkdir(path.dirname(resultsFile), { recursive: true });
+    await fs.appendFile(resultsFile, JSON.stringify(entry) + '\n', 'utf8');
+  } catch (e) {
+    console.error('[eftkey] failed to write result', e);
+  }
+}
+
+subscribeLogs((evt) => {
+  const nowIso = new Date().toISOString();
+  const outcomeTypes = new Set([
+    'transactionApproved',
+    'transactionDeclined',
+    'transactionAborted',
+    'transactionTimedOut',
+    'transactionConfirmationSucceeded',
+    'transactionConfirmationFailed',
+  ]);
+  if (!outcomeTypes.has(evt.type)) return;
+
+  const payload = evt.payload || {};
+  appendResult({ ts: nowIso, type: evt.type, status: lastStatus, payload });
 });
 
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
