@@ -47,6 +47,7 @@
       <div class="muted" id="conn">Verbindung: unbekannt</div>
       <div class="row" style="margin-top:.75rem">
         <button id="btnActivate">Terminal aktivieren</button>
+        <button id="btnDiag" style="background:#6c757d">Verbindung testen</button>
       </div>
       <pre id="pairingJson" style="display:none"></pre>
     </div>
@@ -250,6 +251,30 @@
         } catch (e) {
           log('POST /activate failed', String(e));
           msg.innerHTML = '<span class=err>Fehler bei Activation</span>';
+        }
+      });
+
+      // Verbindung testen: ruft /diagnostics und /diagnostics/terminal/:id auf
+      document.getElementById('btnDiag').addEventListener('click', async () => {
+        try {
+          const globalRes = await fetch('/diagnostics');
+          const globalJson = await globalRes.json();
+          log('GET /diagnostics', globalJson);
+        } catch (e) {
+          log('GET /diagnostics failed', String(e));
+        }
+        try {
+          const id = (document.getElementById('termId').value || '').trim();
+          if (id) {
+            const tRes = await fetch(`/diagnostics/terminal/${encodeURIComponent(id)}`);
+            const tJson = await tRes.json();
+            log(`GET /diagnostics/terminal/${id}`, tJson);
+            if (tJson && tJson.ready === true) {
+              document.getElementById('conn').innerHTML = '<span class="ok">Verbindung: bereit</span>';
+            }
+          }
+        } catch (e) {
+          log('GET /diagnostics/terminal failed', String(e));
         }
       });
 
