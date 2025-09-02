@@ -56,13 +56,10 @@ export async function createTerminal(): Promise<void> {
     await fs.mkdir(DATA_DIR, { recursive: true });
   }
 
-  // Import the local library via require of built JS. It uses ES export default.
-  // We'll load from the local repo path.
-  const ecritfRoot = path.resolve(process.cwd(), 'ecritf-main');
-  const libPath = path.join(ecritfRoot, 'ecritf.js');
+  // Import the PayTec library from the installed package
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const ecritf = require(libPath);
-  const POSTerminal = ecritf.default;
+  const ecritf = require('ecritf');
+  const POSTerminal = ecritf.default || ecritf;
 
   let pairing: PairingInfo | undefined = undefined;
   try {
