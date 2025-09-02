@@ -116,6 +116,29 @@ flowchart LR
   LOGS --> GUI
 ```
 
+## Communication flow (management view)
+
+```mermaid
+sequenceDiagram
+  participant User as User
+  participant GUI as Browser GUI
+  participant API as eftkey API
+  participant Lib as PayTec Library
+  participant Cloud as PayTec Cloud (SMQ)
+  participant Term as EFT Terminal
+
+  User->>GUI: Enter pairing/trigger transaction
+  GUI->>API: REST: /pair, /activate, /transaction/*
+  API->>Lib: trm.pair / trm.startTransaction
+  Lib->>Cloud: Secure WebSocket (SMQ)
+  Cloud->>Term: Forward command
+  Term-->>Cloud: Status/Outcome/Receipt
+  Cloud-->>Lib: Responses (SMQ)
+  Lib-->>API: Callbacks (approved/declined/...)
+  API-->>GUI: SSE /logs (live updates)
+  API-->>API: Persist outcomes (.data/transactions.ndjson)
+```
+
 ## Git usage
 
 Initialize and push to your repository:
