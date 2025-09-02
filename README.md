@@ -83,6 +83,39 @@ curl http://localhost:3000/healthz
 - Pairing and transaction logs are visible both in the terminal output and in the GUI log panel.
 - Pairing endpoint includes a safe retry that recreates the terminal on SMQ/TID errors.
 
+## Architecture diagram
+
+```mermaid
+flowchart LR
+  subgraph Client
+    GUI["Browser GUI\n(public/index.html)"]
+  end
+
+  subgraph Server[Node.js/Express]
+    API["Express API\n/src/server.ts"]
+    LOGS["SSE /logs\nsubscribeLogs"]
+    LOOP["Loop mode\nAV auto-retrigger"]
+    PERSIST["Persistence\n.data/pairing.json\n.data/transactions.ndjson"]
+    LIB["PayTec lib loader\n/src/paytec.ts"]
+  end
+
+  subgraph PayTec
+    ECRITF["ecritf-main/ecritf.js\nPOSTerminal"]
+    CLOUD["SMQ Cloud\nwss://ecritf.paytec.ch/smq.lsp"]
+    TERM["POS Terminal"]
+  end
+
+  GUI -- "POST /pair, /activate, /transaction/*, /loop" --> API
+  GUI -- "EventSource /logs" --> LOGS
+  API --> LIB
+  LIB --> ECRITF
+  ECRITF <--> CLOUD <--> TERM
+  LIB --> PERSIST
+  API --> PERSIST
+  LOOP --> API
+  LOGS --> GUI
+```
+
 ## Git usage
 
 Initialize and push to your repository:
