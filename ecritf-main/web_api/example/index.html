@@ -1,0 +1,1596 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+        <link rel="stylesheet" href="//use.fontawesome.com/releases/v5.7.0/css/all.css" />
+        <link rel="stylesheet" href="//stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" />
+
+        <style>
+            pre {
+                white-space: pre-wrap;       /* css-3 */
+                word-wrap: break-word;       /* Internet Explorer 5.5+ */
+            }
+            .initiallyHidden {
+                display: none;
+            }
+
+            /* Prevent spin buttons on Firefox. */
+            input[type='number'] {
+                -moz-appearance:textfield;
+            }
+
+            body, .tab-content {
+                height: 100%;
+            }
+
+            .nav i, .dropdown i {
+                margin-right: 5px;
+                margin-left: 5px;
+                font-size: 1.2em;
+            }
+
+            .info-title-1 {
+                margin-top: 3%;
+                font-size: 1.8em;
+            }
+
+            .info-title-2 {
+                margin-top: 1%;
+                font-weight: bold;
+            }
+
+            .page-spacer {
+                margin-top: 1%;
+            }
+
+            .section-spacer {
+                margin-top: 10%;
+            }
+
+            .subsection-spacer {
+                margin-top: 5%;
+            }
+
+            .button-spacer {
+                margin-top: 5%;
+            }
+        </style>
+
+        <title>PayTec AEM</title>
+    </head>
+    <body>
+        <div class="container-fluid page-spacer p-0">
+            <div class="row">
+                <div class="col-1">
+                    <img class="img-responsive" src="paytec-logo.png"></img>
+                </div>
+                <div class="col-11 text-right">
+                    <i id="onlineProcessing" class="fas fa-phone status initiallyHidden i18n" title="Terminal is online"></i>
+                    <i id="cardDataAvailable" class="fa fa-credit-card status initiallyHidden i18n" title="Card has been read"></i>
+                    <i id="busy" class="fa fa-hourglass status initiallyHidden i18n" title="Terminal is busy"></i>
+                    <i id="shiftOpen" class="fa fa-lock-open status activated initiallyHidden i18n" title="Shift is open"></i>
+                    <i id="shiftClosed" class="fa fa-lock status deactivated i18n" title="Shift is closed"></i>
+                    <i id="connected" class="fa fa-link connected initiallyHidden i18n" title="Connected to terminal"></i>
+                    <i id="disconnected" class="fa fa-unlink disconnected i18n" title="No terminal connected"></i>
+                </div>
+            </div>
+        </div>
+
+        <div class="container p-0">
+            <div class="navbar">
+                <ul class="nav nav-tabs mr-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" id="paymentTab" data-toggle="tab" href="#paymentPane" role="tab" aria-controls="paymentPane" aria-selected="true">
+                            <i class="fa fa-credit-card"></i>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" id="receiptTab" data-toggle="tab" href="#receiptPane" role="tab" aria-controls="receiptPane" aria-selected="false">
+                            <i class="fas fa-receipt"></i>
+                        </a>
+                    </li>
+                    <li class="nav-item no-kiosk">
+                        <a class="nav-link" id="infoTab" data-toggle="tab" href="#infoPane" role="tab" aria-controls="infoPane" aria-selected="false">
+                            <i class="fas fa-info"></i>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" id="settingsTab" data-toggle="tab" href="#settingsPane" role="tab" aria-controls="settingsPane" aria-selected="false">
+                            <i class="fas fa-sliders-h"></i>
+                        </a>
+                    </li>
+                </ul>
+                <ul class="nav">
+                    <li>
+                    <a href="#" class="dropdown">
+                        <a href="#" class="dropdown-toggle" id="navbarDropdownMenuLink" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                            <i class="fa fa-wrench"></i>
+                        </a>
+                        <div class="dropdown-menu dropdown-menu-right dropdown-primary" aria-labelledby="navbarDropdownMenuLink">
+                            <a class="dropdown-item disconnected" onclick="javascript:enterPairingCode();">
+                                <i class="fas fa-link"></i>&nbsp;<span class="i18n">Connect to terminal</span>
+                            </a>
+                            <a class="dropdown-item connected no-kiosk" onclick="javascript:unpair();">
+                                <i class="fas fa-unlink"></i>&nbsp;<span class="i18n">Disconnect from terminal</span>
+                            </a>
+                            <div class="dropdown-divider no-kiosk"></div> 
+                            <a class="dropdown-item no-kiosk" id="reboot" onclick="javascript:trm.deviceCommand({ DeviceCommandCode: trm.DeviceCommands.REBOOT });">
+                                <i class="fas fa-power-off"></i>&nbsp;<span class="i18n">Reboot terminal</span>
+                            </a>
+                            <a class="dropdown-item no-kiosk" id="swUpdate" onclick="javascript:trm.deviceCommand({ DeviceCommandCode: trm.DeviceCommands.SW_UPDATE });">
+                                <i class="fas fa-cloud-download-alt"></i>&nbsp;<span class="i18n">Update software</span>
+                            </a>
+                            <div class="dropdown-divider no-kiosk"></div> 
+                            <a class="dropdown-item" id="reload" onclick="javascript:location.reload(true);">
+                                <i class="fas fa-redo"></i>&nbsp;<span class="i18n">Reload page</span>
+                            </a>
+                        </div>
+                    </a>
+                    </li>
+                </ul>
+            </div>
+            <div class="tab-content">
+                <div id="paymentPane" class="tab-pane container show active section-spacer" role="tabpanel">
+                    <div class="row">
+                        <div class="col-12">
+                            <form id="paymentForm" class="md-form needs-validation connected activated" action="javascript:transaction()" novalidate>
+                                <div class="form-group">
+                                    <label for="trxFunctionSelect" class="i18n">Function:</label>
+                                    <select class="form-control" id="trxFunctionSelect"></select>
+                                </div>
+                                <div class="form-group amt-auth-needed">
+                                    <label for="amtAuth" class="i18n">Amount:</label>
+                                    <select class="form-control" id="currencySelect"></select>
+                                    <input type="text" inputmode="numeric" class="form-control" id="amtAuth" pattern="^\$?(([1-9](\d*|\d{0,2}(,\d{3})*))|0)(\.\d{1,2})?$" required></input>
+                                    <div class="invalid-feedback">
+                                        <div class="col-12 i18n">Invalid amount - valid values: 0.01 - 999999.99</div>
+                                    </div>
+                                </div>
+                                <div class="form-group amt-other-needed">
+                                    <label for="amtOther" class="i18n">Cashback:</label>
+                                    <input type="text" inputmode="numeric" class="form-control" id="amtOther" pattern="^\$?(([1-9](\d*|\d{0,2}(,\d{3})*))|0)(\.\d{1,2})?$"></input>
+                                    <div class="invalid-feedback">
+                                        <div class="col-12 i18n">Invalid amount - valid values: 0.01 - 999999.99</div>
+                                    </div>
+                                </div>
+                                <div class="form-group auth-c-needed">
+                                    <label for="authC" class="i18n">Authorization code:</label>
+                                    <input type="text" class="form-control" id="authC"></input>
+                                </div>
+                                <div class="form-group trx-ref-num-supported no-kiosk">
+                                    <label for="trxRefNum" class="i18n">Reference number:</label>
+                                    <input type="text" class="form-control" id="trxRefNum"></input>
+                                </div>
+                                <div class="form-group acq-id-supported no-kiosk">
+                                    <label for="acqIDSelect" class="i18n">Acquirer:</label>
+                                    <select class="form-control" id="acqIDSelect"></select>
+                                </div>
+                                <div class="form-group trx-seq-cnt-needed">
+                                    <label for="trxSeqCnt" class="i18n">Sequence counter:</label>
+                                    <input type="text" class="form-control" id="trxSeqCnt"></input>
+                                </div>
+                                <div class="form-group">
+                                    <button type="submit" class="btn btn-primary btn-block btn-lg" id="pay">
+                                        <i class="fas fa-check"></i>&nbsp;<span class="i18n">OK</span>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-danger btn-lg initiallyHidden" id="abortTransactionButton" onclick="javascript:trm.abortTransaction();">
+                                        <i class="fas fa-times"></i>&nbsp;<span class="i18n">Abort</span>
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="disconnected text-center">
+                        <button type="button" class="btn btn-primary btn-block btn-lg" onclick="javascript:enterPairingCode();">
+                            <i class="fas fa-link"></i>&nbsp;<span class="i18n">Connect to terminal</span>
+                        </button>
+                    </div>
+                    <div class="connected deactivated text-center">
+                        <button type="button" class="btn btn-primary btn-block btn-lg i18n"
+                            id="activate" onclick="javascript:activate()">Activate terminal</button>
+                    </div>
+                    <div class="section-spacer"></div>
+                    <div class="connected activated no-kiosk text-center">
+                        <button type="button" class="btn btn-primary btn-block i18n"
+                            id="deactivate" onclick="javascript:deactivate()">Deactivate terminal</button>
+                    </div>
+                    <div class="connected deactivated no-kiosk text-center button-spacer">
+                        <button type="button" class="btn btn-primary btn-block i18n"
+                            id="balance" onclick="javascript:balance()">Final balance</button>
+                    </div>
+                    <div class="connected no-kiosk text-center button-spacer">
+                        <div class="dropdown">
+                            <button class="btn btn-primary btn-block dropdown-toggle i18n" type="button" data-toggle="dropdown">Submit transaction data<span class="caret"></span></button>
+                            <ul class="dropdown-menu dropdown-primary">
+                                <li><a class="dropdown-item i18n" onclick="javascript:capture(1)">all</a></li>
+                                <li><a class="dropdown-item" onclick="javascript:capture(5)">Submission</a></li>
+                                <li><a class="dropdown-item" onclick="javascript:capture(3)">Transmission</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="connected no-kiosk text-center button-spacer">
+                        <button type="button" class="btn btn-primary btn-block i18n"
+                            id="config" onclick="javascript:configure()">Configuration</button>
+                    </div>
+                    <div class="connected no-kiosk text-center button-spacer">
+                        <div class="dropdown">
+                            <button class="btn btn-primary btn-block dropdown-toggle i18n" type="button" data-toggle="dropdown">Initialisation<span class="caret"></span></button>
+                            <ul class="dropdown-menu dropdown-primary" id="initAcquirerList"/>
+                        </div>
+                    </div>
+                </div>
+                <div id="receiptPane" class="tab-pane container" role="tabpanel">
+                    <div class="text-right">
+                        <button type="button" id="clearReceipts" class="btn btn-primary d-none" title="Clear" onclick="javascript:clearReceipts()">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                    <div id="receipts">
+                    </div>
+                </div>
+                <div id="infoPane" class="tab-pane container" role="tabpanel">
+                    <div class="row info-title-1 i18n">Info:</div>
+                    <div class="row info-title-2 i18n">Device model:</div>
+                    <div class="row i18n" id="terminalModel">unknown</div>
+                    <div class="row info-title-2 i18n">Trm-Id:</div>
+                    <div class="row i18n" id="terminalID">unknown</div>
+                    <div class="row info-title-2 i18n">Serial number:</div>
+                    <div class="row i18n" id="serialNumber">unknown</div>
+                    <div class="row info-title-2 i18n">Software version:</div>
+                    <div class="row i18n" id="software">unknown</div>
+                    <div class="row info-title-1 i18n">Processors</div>
+                    <div class="i18n" id="acquirerInfo">[none]</div>
+                    <div class="row info-title-1 i18n">Means of payment</div>
+                    <div class="i18n" id="brandInfo">[none]</div>
+                    <div class="row info-title-1 i18n">Transaction types</div>
+                    <div class="i18n" id="trxFunctionInfo">[none]</div>
+                </div>
+                <div id="settingsPane" class="tab-pane container" role="tabpanel">
+                    <div class="row form-group info-title-1 i18n">General</div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" value="" id="kioskMode" onclick="javascript:toggleKioskMode();">
+                        <label class="form-check-label i18n" for="kioskMode">Kiosk mode</label>
+                    </div>
+                    <div class="row no-kiosk form-group info-title-1 i18n">Language</div>
+                    <div class="form-check no-kiosk">
+                        <input class="form-check-input" type="checkbox" value="" id="browserLanguageOnTrm" onclick="javascript:storeSettings();">
+                        <label class="form-check-label i18n" for="browserLanguageOnTrm">Browser language on terminal</label>
+                    </div>
+                    <div class="row no-kiosk form-group info-title-1 printer-available i18n">Automatically print receipts on terminal</div>
+                    <div class="form-check no-kiosk printer-available">
+                        <input class="form-check-input" type="checkbox" value="" id="printMerchantReceipts" onclick="javascript:storeSettings();">
+                        <label class="form-check-label i18n" for="printMerchantReceipts">Merchant receipts</label>
+                    </div>
+                    <div class="form-check no-kiosk printer-available">
+                        <input class="form-check-input" type="checkbox" value="" id="printCardholderReceipts" onclick="javascript:storeSettings();">
+                        <label class="form-check-label i18n" for="printCardholderReceipts">Cardholder receipts</label>
+                    </div>
+                    <div class="form-check no-kiosk printer-available">
+                        <input class="form-check-input" type="checkbox" value="" id="printInfoReceipts" onclick="javascript:storeSettings();">
+                        <label class="form-check-label i18n" for="printInfoReceipts">Information receipts</label>
+                    </div>
+                    <div class="row no-kiosk form-group info-title-1 i18n">Transactions</div>
+                    <div class="form-check no-kiosk">
+                        <input class="form-check-input" type="checkbox" value="" id="manualConfirmation" onclick="javascript:toggleAutoConfirm();">
+                        <label class="form-check-label i18n" for="manualConfirmation">Confirm transaction manually</label>
+                    </div>
+                </div>
+            </div>
+            <div id="dialog" class="modal fade" role="dialog">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h4 id="dialogTitle" class="modal-title"></h4>
+                            <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span></button>
+                        </div>
+                        <div class="modal-body">
+                            <p id="dialogText"></p>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-primary" data-dismiss="modal"><span class="i18n">OK</span></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="pairingDialog" class="modal fade" role="dialog">
+                <div class="modal-dialog">
+                    <form class="form-horizontal" role="form" method="post" action="">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h4 class="modal-title i18n">Pairing with Terminal</h4>
+                                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span></button>
+                            </div>
+                            <div class="modal-body">
+                                <p class="i18n">Please enter the pairing code:</p>
+                                <input type="number" id="pairingCode"></input>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="submit" class="btn btn-primary" data-dismiss="modal" onclick="javascript:doPairing($('#pairingCode')[0].value);">
+                                    <i class="fas fa-check"></i>&nbsp;<span class="i18n">OK</span>
+                                </button>
+                                <button type="button" class="btn btn-outline-danger" data-dismiss="modal">
+                                    <i class="fas fa-times"></i>&nbsp;<span class="i18n">Abort</span>
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <div id="confirmationDialog" class="modal fade" role="dialog" data-backdrop="static" data-keyboard="false">
+                <div class="modal-dialog">
+                    <form class="form-horizontal" role="form" method="post" action="">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h4 class="modal-title i18n">Confirm Transaction</h4>
+                            </div>
+                            <div class="modal-body">
+                                <p class="i18n">Confirmed amount:</p>
+                                <input type="text" inputmode="numeric" id="trxAmt"></input>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="submit" class="btn btn-primary" data-dismiss="modal" onclick="javascript:confirmTransaction();">
+                                    <i class="fas fa-check"></i>&nbsp;<span class="i18n">OK</span>
+                                </button>
+                                <button type="button" class="btn btn-outline-danger" data-dismiss="modal" onclick="javascript:rollbackTransaction();">
+                                    <i class="fas fa-times"></i>&nbsp;<span class="i18n">Abort</span>
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <div id="activateKioskModeDialog" class="modal fade" role="dialog">
+                <div class="modal-dialog">
+                    <form class="form-horizontal" role="form" method="post" action="">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h4 class="modal-title i18n">Activate Kiosk Mode</h4>
+                                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="row">
+                                    <div class="col">
+                                        <span class="i18n">Deactivation password:</span>
+                                    </div>
+                                    <div class="col text-right">
+                                        <input type="password" id="newKioskModePassword" autocomplete="off"></input>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col">
+                                        <span class="i18n">Repeat:</span>
+                                    </div>
+                                    <div class="col text-right">
+                                        <input type="password" id="repeatKioskModePassword" autocomplete="off"></input>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="submit" class="btn btn-primary" data-dismiss="modal" onclick="javascript:tryActivateKioskMode();">
+                                    <i class="fas fa-check"></i>&nbsp;<span class="i18n">OK</span>
+                                </button>
+                                <button type="button" class="btn btn-outline-danger" data-dismiss="modal">
+                                    <i class="fas fa-times"></i>&nbsp;<span class="i18n">Abort</span>
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <div id="deactivateKioskModeDialog" class="modal fade" role="dialog">
+                <div class="modal-dialog">
+                    <form class="form-horizontal" role="form" method="post" action="">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h4 class="modal-title i18n">Deactivate Kiosk Mode</h4>
+                                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span></button>
+                            </div>
+                            <div class="modal-body">
+                                <p class="i18n">Enter password:</p>
+                                <input type="password" id="kioskModePassword" autocomplete="off"></input>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="submit" class="btn btn-primary" data-dismiss="modal" onclick="javascript:tryDeactivateKioskMode();">
+                                    <i class="fas fa-check"></i>&nbsp;<span class="i18n">OK</span>
+                                </button>
+                                <button type="button" class="btn btn-outline-danger" data-dismiss="modal">
+                                    <i class="fas fa-times"></i>&nbsp;<span class="i18n">Abort</span>
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <script src="//code.jquery.com/jquery-3.3.1.slim.min.js"></script>
+        <script src="//cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"></script>
+        <script src="//stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+        <script src="//cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js"></script>
+        <script src="//ecritf.paytec.ch/api/v1.0/ecritf.js"></script>
+
+        <script language = "javascript" type = "text/javascript">
+            var language = navigator.language.split("-")[0];
+            var trm;
+            var dialogTimer = undefined;
+            var trmStatus = 0;
+            var pairingInfo;
+            var ONLINE_ADVICE = 0x11111111; // private function to confirm AUTHORIZATION_PURCHASE transactions (petrol use case)
+            var FOLLOW_ON_PURCHASE = 0x11111112; // private transaction function to map follow-on purchase use case
+            var FOLLOW_ON_CREDIT = 0x11111113; // private transaction function to map follow-on credit use case
+            var lastTrxSeqCnt = -1;
+            var connected = false;
+
+            // IE compatibility
+            Math.trunc = Math.trunc || function(x) {
+              if (isNaN(x)) {
+                return NaN;
+              }
+              if (x > 0) {
+                return Math.floor(x);
+              }
+              return Math.ceil(x);
+            };
+
+            if (typeof(Storage) !== "undefined") {
+                let info = localStorage.getItem("pairingInfo");
+
+                if (info !== undefined) {
+                    try {
+                        pairingInfo = JSON.parse(info);
+                    }
+                    catch (err) {
+                        console.log("Cannot parse pairing info");
+                        pairingInfo = undefined;
+                    }
+                }
+
+                $("#browserLanguageOnTrm").prop('checked', localStorage.getItem("browserLanguageOnTrm") == "true");
+                $("#printMerchantReceipts").prop('checked', localStorage.getItem("printMerchantReceipts") == "true");
+                $("#printCardholderReceipts").prop('checked', localStorage.getItem("printCardholderReceipts") == "true");
+                $("#printInfoReceipts").prop('checked', localStorage.getItem("printInfoReceipts") == "true");
+                $("#manualConfirmation").prop('checked', localStorage.getItem("manualConfirmation") == "true");
+
+                // reset to current settings if dialog is aborted
+                $('#activateKioskModeDialog').on('hidden.bs.modal', function (e) { applyKioskModeSetting(); });
+                $('#deactivateKioskModeDialog').on('hidden.bs.modal', function (e) { applyKioskModeSetting(); });
+                applyKioskModeSetting();
+            }
+            else {
+                $("#kioskMode").attr("disabled", true);
+                $("#kioskMode").attr('data-original-title', i18n("Function not supported by this browser")).tooltip("enable");
+            }
+
+            trm = new PayTec.POSTerminal(pairingInfo, {
+                    OnPairingFailed: onPairingFailed,
+                    OnConnected: onConnected,
+                    OnDisconnected: onDisconnected,
+                    OnStatusChanged: onStatusChanged,
+                    OnTransactionApproved: onTransactionApproved,
+                    OnTransactionDeclined: onTransactionFailed,
+                    OnTransactionReferred: onTransactionFailed,
+                    OnTransactionAborted: onTransactionFailed,
+                    OnTransactionTimedOut: onTransactionTimedOut,
+                    OnActivationSucceeded: resetTransactionUI,
+                    OnInitializationSucceeded: resetTransactionUI,
+                    OnConfigurationSucceeded: resetTransactionUI,
+                    OnTransactionConfirmationSucceeded: onTransactionConfirmationSucceeded,
+                    OnTransactionConfirmationFailed: resetTransactionUI,
+                    OnTransactionConfirmationTimedOut: resetTransactionUI,
+                    OnReceipt: onReceipt,
+                    OnError: onError
+                });
+
+            if ($("#browserLanguageOnTrm").is(":checked")) {
+                trm.setTrmLng(language);
+            }
+
+            trm.setAutoConfirm($("#manualConfirmation").prop('checked') == false);
+
+            function applyVisibility() {
+                $(".connected").show();
+                $(".disconnected").show();
+                $(".status").show();
+                $(".no-kiosk").show();
+                $(".kiosk").show();
+                $(".activated").show();
+                $(".deactivated").show();
+                $(".printer-available").show();
+
+                if (trm !== undefined) {
+                    var selectedFunction = $("#trxFunctionSelect").val();
+
+                    if (ONLINE_ADVICE == selectedFunction) {
+                        $(".trx-seq-cnt-needed").show();
+                        $(".amt-auth-needed").show();
+                        $(".acq-id-supported").hide();
+                        $(".amt-other-needed").hide();
+                        $(".auth-c-needed").hide();
+                        $(".trx-ref-num-supported").hide();
+                    }
+                    else if ((FOLLOW_ON_PURCHASE == selectedFunction) || (FOLLOW_ON_CREDIT == selectedFunction)) {
+                        $(".trx-seq-cnt-needed").hide();
+                        $(".amt-auth-needed").show();
+                        $(".acq-id-supported").show();
+                        $(".amt-other-needed").hide();
+                        $(".auth-c-needed").hide();
+                        $(".trx-ref-num-supported").show();
+                    }
+                    else {
+                        if (trm.supportsAcqID(selectedFunction)
+                            && (trm.TransactionFunctions.PURCHASE != selectedFunction) // handled separately as FOLLOW_ON_PURCHASE & FOLLOW_ON_CREDIT
+                            && (trm.TransactionFunctions.CREDIT != selectedFunction)) {
+                            $(".acq-id-supported").show();
+                        }
+                        else {
+                            $(".acq-id-supported").hide();
+                        }
+
+                        if (trm.needsAmtAuth(selectedFunction)) {
+                            $(".amt-auth-needed").show();
+                            $("#amtAuth").focus();
+                        }
+                        else {
+                            $(".amt-auth-needed").hide();
+                        }
+
+                        if (trm.needsAmtOther(selectedFunction)) {
+                            $(".amt-other-needed").show();
+                        }
+                        else {
+                            $(".amt-other-needed").hide();
+                        }
+
+                        if (trm.needsAuthC(selectedFunction)) {
+                            $(".auth-c-needed").show();
+                        }
+                        else {
+                            $(".auth-c-needed").hide();
+                        }
+
+                        if (trm.supportsTrxRefNum(selectedFunction)
+                            && (trm.TransactionFunctions.PURCHASE != selectedFunction) // handled separately as FOLLOW_ON_PURCHASE & FOLLOW_ON_CREDIT
+                            && (trm.TransactionFunctions.CREDIT != selectedFunction)) {
+                            $(".trx-ref-num-supported").show();
+                        }
+                        else {
+                            $(".trx-ref-num-supported").hide();
+                        }
+
+                        $(".trx-seq-cnt-needed").hide();
+                    }
+
+                    $("#paymentForm").removeClass("was-validated");
+                }
+
+                if (!connected) {
+                    $(".connected").hide();
+                    $(".status").hide();
+                }
+
+                if (connected)
+                    $(".disconnected").hide();
+
+                if ((trm !== undefined) && (trm.StatusFlags.SHIFT_OPEN & trmStatus))
+                    $(".deactivated").hide();
+                else
+                    $(".activated").hide();
+
+                if ((trm === undefined) || (trm.StatusFlags.PRINTER_UNAVAILABLE & trmStatus))
+                    $(".printer-available").hide();
+
+                $("#busy").toggle((trm !== undefined) && (((trm.StatusFlags.BUSY | trm.StatusFlags.LOCKED) & trmStatus) != 0));
+                $("#onlineProcessing").toggle((trm !== undefined) && ((trm.StatusFlags.ONLINE_PROCESSING & trmStatus) != 0));
+                $("#cardDataAvailable").toggle((trm !== undefined) && (((trm.StatusFlags.CARD_DATA_AVAILABLE | trm.StatusFlags.APPLICATION_SELECTED) & trmStatus) != 0));
+
+                if ((typeof(Storage) !== "undefined") && (localStorage.getItem("kioskModePassword") !== null))
+                    $(".no-kiosk").hide();
+                else
+                    $(".kiosk").hide();
+            }
+
+            function applyRequiredFields() {
+                $("#authC").prop("required", false);
+                $("#trxSeqCnt").prop("required", false);
+                $("#acqID").prop("required", false);
+                $("#trxRefNum").prop("required", false);
+                $("#amtOther").prop("required", false);
+
+                if (trm !== undefined) {
+                    var selectedFunction = $("#trxFunctionSelect").val();
+
+                    if (ONLINE_ADVICE == selectedFunction) {
+                        $("#trxSeqCnt").prop("required", true);
+                    }
+                    else if ((FOLLOW_ON_PURCHASE == selectedFunction) || (FOLLOW_ON_CREDIT == selectedFunction)) {
+                        $("#acqID").prop("required", true);
+                        $("#trxRefNum").prop("required", true);
+                    }
+                    else {
+                        if (trm.needsAuthC(selectedFunction)) {
+                            $("#authC").prop("required", true);
+                        }
+                    }
+                }
+            }
+
+            function onConnected() {
+                connected = true;
+
+                if (dialogTimer == undefined) {
+                    setDialogTimer(500);
+                }
+
+                $("#terminalModel").html(trm.getDeviceModelName());
+                $("#serialNumber").html(trm.getSerialNumber());
+                $("#terminalID").html(trm.getTerminalID());
+
+                v = trm.getSoftwareVersion();
+
+                $("#software").html(pad(Math.trunc(v / 10000), 2, '0')
+                    + "." + pad(Math.trunc((v % 10000) / 100), 2, '0')
+                    + "." + pad(Math.trunc(v % 100), 2, '0'));
+
+                applyVisibility();
+            }
+
+            function onPairingFailed() {
+                showDialog(i18n("Error"), i18n("Failed to connect to terminal"), 10000);
+            }
+
+            function onStatusChanged(statusResponse) {
+                var newStatus = trm.getStatus();
+                var oldStatus = trmStatus;
+
+                if ((trm.StatusFlags.OUT_OF_PAPER & newStatus) != (trm.StatusFlags.OUT_OF_PAPER & trmStatus)) {
+                    if (trm.StatusFlags.OUT_OF_PAPER & newStatus) {
+                        showDialog(i18n("Printer problem"), i18n("Please exchange paper roll"), Infinity);
+                    }
+                    else {
+                        if (dialogTimer == undefined) {
+                            setDialogTimer(500);
+                        }
+                    }
+                }
+                else if ((trm.StatusFlags.WAITING_FOR_TRANSACTION_REQUEST & newStatus) && !(trm.StatusFlags.WAITING_FOR_TRANSACTION_REQUEST & trmStatus)) {
+                    $("#amtAuth").focus();
+
+                    if (dialogTimer == undefined) {
+                        setDialogTimer(500);
+                    }
+                }
+                else if ((((trm.StatusFlags.BUSY | trm.StatusFlags.LOCKED) & newStatus) != ((trm.StatusFlags.BUSY | trm.StatusFlags.LOCKED) & trmStatus)) && $("#abortTransactionButton").is(":hidden")) {
+                    if ((trm.StatusFlags.BUSY & newStatus) && !(trm.StatusFlags.CARD_DATA_AVAILABLE & newStatus)) {
+                        showDialog(i18n("Please wait"), i18n("Please wait"), Infinity);
+                    }
+                    else {
+                        if (dialogTimer == undefined) {
+                            setDialogTimer(500);
+                        }
+                    }
+                }
+
+                trmStatus = newStatus;
+
+                if (!isBusy()) {
+                    // update acquirers
+                    var acquirerInfoHTML = "";
+                    var acqIDSelectHTML = "";
+                    var initAcquirerListHTML = "<li><a class='dropdown-item' onclick='javascript:initialize(-1);'>" + i18n("all") + "</a></li>";
+                    var acquirers = trm.getAcquirers();
+
+                    for (var i in acquirers) {
+                        var acqInfo = trm.getAcquirerInfo(acquirers[i]);
+                        var lastInitDate = acqInfo.LastAcqInitDate === undefined ? i18n("never") : acqInfo.LastAcqInitDate;
+
+                        acquirerInfoHTML +=
+                            "<div class='row'>"
+                                + "<div class='col text-left'>Acquirer ID: " + acqInfo.AcqID
+                                + "</div>"
+                                + "<div class='col text-left'>" + i18n("successfully initialised: ") + lastInitDate
+                                + "</div>"
+                                + "<div class='col text-right'>"
+                                    + "<button type='button' class='btn btn-primary connected' onclick='javascript:initialize(" + acqInfo.AcqID + ");'>"
+                                        + "<i class=\"fas fa-redo\"></i>"
+                                    + "</button>"
+                                + "</div>"
+                            + "</div>";
+
+                        acqIDSelectHTML += "<option value='" + acqInfo.AcqID + "'>" + acqInfo.AcqID + "</option>";
+                        initAcquirerListHTML += "<li><a class='dropdown-item' onclick='javascript:initialize(" + acqInfo.AcqID + ");'>Acq&nbsp;" + acqInfo.AcqID + "</a></li>";
+                    }
+
+                    $("#acquirerInfo").html(acquirerInfoHTML);
+                    $("#acqIDSelect").html(acqIDSelectHTML);
+                    $("#initAcquirerList").html(initAcquirerListHTML);
+
+                    // update supported brands, currencies & transaction functions
+                    var brandInfoHTML = "";
+                    var brands = trm.getBrands();
+
+                    for (var i in brands) {
+                        var brand = brands[i];
+
+                        brandInfoHTML +=
+                            "<div class='row'>"
+                                + "<div class='col-3'>" + brand + "</div>"
+                            + "</div>";
+                    }
+
+                    $("#brandInfo").html(brandInfoHTML);
+
+                    var currencySelectHTML = "";
+                    var currencies = trm.getCurrencies();
+
+                    for (var i in currencies) {
+                        var currency = currencies[i];
+                        var name = "";
+
+                        // TODO: translate all ISO 4217 codes
+                        switch (currency) {
+                        case 756:
+                            currencySelectHTML += "<option value='" + currency + "'>CHF</option>";
+                            break;
+                        case 978:
+                            currencySelectHTML += "<option value='" + currency + "'>EUR</option>";
+                            break;
+                        case 840:
+                            currencySelectHTML += "<option value='" + currency + "'>USD</option>";
+                            break;
+                        }
+                    }
+
+                    $("#currencySelect").html(currencySelectHTML);
+
+                    var trxFunctionInfoHTML = "";
+                    var trxFunctionSelectHTML = "";
+                    var trxFunctions = trm.getTransactionFunctions();
+
+                    for (var i in trxFunctions) {
+                        var name = trm.getTransactionFunctionName(trxFunctions[i], language);
+                        var cssClasses;
+                        
+                        switch (trxFunctions[i]) {
+                        case trm.TransactionFunctions.PURCHASE_FORCED_ACCEPTANCE:
+                        case trm.TransactionFunctions.REVERSAL:
+                        case trm.TransactionFunctions.CREDIT:
+                        case trm.TransactionFunctions.LOAD:
+                        case trm.TransactionFunctions.AUTHORIZATION_PURCHASE:
+                            cssClasses = "no-kiosk";
+                            break;
+                        default:
+                            cssClasses = "";
+                            break;
+                        }
+
+                        trxFunctionInfoHTML += "<div class='row'><div class='col'>" + name + "</div></div>";
+                        trxFunctionSelectHTML += "<option class='" + cssClasses + "' value='" + trxFunctions[i] + "'>" + name + "</option>";
+
+                        if (trm.TransactionFunctions.AUTHORIZATION_PURCHASE == trxFunctions[i]) {
+                            trxFunctionSelectHTML += "<option class='no-kiosk' value='" + ONLINE_ADVICE + "'>" + "Online Advice" + "</option>";
+                        }
+                        else if ((trm.TransactionFunctions.PURCHASE == trxFunctions[i]) && trm.supportsTrxRefNum(trxFunctions[i])) {
+                            trxFunctionSelectHTML += "<option class='no-kiosk' value='" + FOLLOW_ON_PURCHASE + "'>" + name + " (follow on)</option>";
+                        }
+                        else if ((trm.TransactionFunctions.CREDIT == trxFunctions[i]) && trm.supportsTrxRefNum(trxFunctions[i])) {
+                            trxFunctionSelectHTML += "<option class='no-kiosk' value='" + FOLLOW_ON_CREDIT + "'>" + name + " (follow on)</option>";
+                        }
+                    }
+
+                    $("#trxFunctionInfo").html(trxFunctionInfoHTML);
+                    $("#trxFunctionSelect").html(trxFunctionSelectHTML);
+                }
+
+                applyPrinterStatus();
+            }
+
+            function resetTransactionUI() {
+                $("#abortTransactionButton").hide();
+                $("#pay").show();
+                $("#acqIDSelect").val($("#acqIDSelect option:first").val());
+                $("#amtAuth")[0].value = "";
+                $("#amtOther")[0].value = "";
+                $("#authC")[0].value = "";
+                $("#trxRefNum")[0].value = "";
+                $("#trxSeqCnt")[0].value = lastTrxSeqCnt;
+                $("#trxFunctionSelect").val($("#trxFunctionSelect option:first").val());
+                
+                if (!$("#confirmationDialog").is(":hidden")) {
+                    $("#confirmationDialog").modal("hide");
+                    $('.modal-backdrop').remove();
+                }
+
+                applyVisibility();
+                applyRequiredFields();
+            }
+
+            function onTransactionApproved(rsp) {
+                lastTrxSeqCnt = rsp.TrxSeqCnt;
+
+                if (rsp.AmtAuth !== undefined) {
+                    $("#trxAmt")[0].value = (rsp.AmtAuth / 100).toFixed(2).toString();
+                } else {
+                    $("#trxAmt")[0].value = $("#amtAuth")[0].value;
+                }
+
+                resetTransactionUI();
+
+                if (trm.getAutoConfirm())
+                    showDialog(i18n("Processing OK"), rsp.AttendantText, 5000);
+                else
+                    $("#confirmationDialog").modal("show");
+            }
+
+            function onTransactionFailed(rsp) {
+                if (rsp.AttendantText === undefined) {
+                    rsp.AttendantText = i18n("Abort");
+                }
+
+                resetTransactionUI();
+                showDialog(i18n("Processing failed"), rsp.AttendantText, 30000);
+            }
+
+            function onTransactionTimedOut() {
+                resetTransactionUI();
+                showDialog(i18n("Processing failed"), "Timeout", 30000);
+            }
+
+            function onTransactionConfirmationSucceeded(response) {
+                console.log("Transaction confirmation succeeded.");
+                console.log(JSON.stringify(response));
+                resetTransactionUI();
+            }
+
+            function onReceipt(receiptType, receiptText) {
+                // printing of electronic signature not implemented in example
+                receiptText = receiptText.replace("<ESignature />", "");
+
+                $("#receipts").html("<div>"
+                            + "<span class='print-tooltip' data-toggle='tooltip' title=''>"
+                                + "<button type='button' class='print-button btn btn-primary connected' onclick='javascript:print(\"" + receiptText.replace(/\n/g, "\\n") + "\");'><i class=\"fas fa-print\"></i>"
+                                + "</button>"
+                            + "</span>"
+                            + "<pre>"
+                                + receiptText.replace("\\n", "\n") + "  ----------------------------  \n\n"
+                            + "</pre>"
+                        + "</div>"
+                    + $("#receipts").html());
+
+                applyPrinterStatus();
+                $("#clearReceipts").removeClass("d-none");
+
+                while ($("#receipts").children().length > 20) {
+                    $("#receipts > div:last-child").remove();
+                }
+
+                if (0 == ((trm.StatusFlags.PRINTER_UNAVAILABLE | trm.StatusFlags.OUT_OF_PAPER) & trmStatus)) {
+                    var doPrint = false;
+
+                    switch (receiptType) {
+                        case trm.ReceiptTypes.TRX:
+                        case trm.ReceiptTypes.FINAL_BALANCE:
+                        case trm.ReceiptTypes.FINAL_BALANCE_FAILED:
+                            if ($("#printMerchantReceipts").is(":checked"))
+                                doPrint = true;
+
+                            break;
+                        case trm.ReceiptTypes.TRX_COPY:
+                            if ($("#printCardholderReceipts").is(":checked"))
+                                doPrint = true;
+
+                            break;
+                        default:
+                            if ($("#printInfoReceipts").is(":checked"))
+                                doPrint = true;
+
+                            break;
+                    }
+
+                    if (doPrint) {
+                        print(receiptText);
+                    }
+                }
+            }
+
+            function onDisconnected() {
+                connected = false;
+                applyVisibility();
+            }
+
+            function onError(message) {
+                showDialog(i18n("Error"), message, 60000);
+
+                if (!$("#abortTransactionButton").is(":hidden")) {
+                    // payment not started due to error
+                    resetTransactionUI();
+                }
+            }
+
+            function enterPairingCode() {
+                $("#pairingCode")[0].value = "";
+                $("#pairingDialog").modal("show");
+            }
+
+            function doPairing(code) {
+                showDialog(i18n("Please wait"), i18n("Connection is being established"), Infinity);
+                trm.pair(code, document.title);
+
+                if (typeof(Storage) !== "undefined") {
+                    localStorage.setItem("pairingInfo", JSON.stringify(trm.getPairingInfo()));
+                }
+            }
+
+            function unpair() {
+                trm.unpair();
+
+                if (typeof(Storage) !== "undefined") {
+                    localStorage.setItem("pairingInfo", undefined);
+                }
+            }
+
+            function transaction() {
+                if ((trm !== undefined) && isBusy() && (0 == (trm.StatusFlags.CARD_DATA_AVAILABLE & trmStatus))) {
+                    showDialog(i18n("Please wait"), i18n("Terminal is busy"), Infinity);
+                    return;
+                }
+
+                var trxFunction = Number($("#trxFunctionSelect").val());
+
+                if (ONLINE_ADVICE == trxFunction) {
+                    trm.confirmTransaction({
+                            TrxAmt: Math.round(Number($("#amtAuth")[0].value) * 100),
+                            TrxSeqCnt: Number($("#trxSeqCnt")[0].value)
+                        });
+                }
+                else {
+                    if (FOLLOW_ON_PURCHASE == trxFunction) {
+                        trxFunction = trm.TransactionFunctions.PURCHASE
+                    }
+                    else if (FOLLOW_ON_CREDIT == trxFunction) {
+                        trxFunction = trm.TransactionFunctions.CREDIT
+                    }
+
+                    var req = {
+                        TrxFunction: trxFunction
+                    };
+                    
+                    if (trm.needsAmtAuth(trxFunction) || trm.needsAmtOther(trxFunction)) {
+                        req.TrxCurrC = Number($("#currencySelect").val());
+                    }
+
+                    if (trm.needsAmtAuth(trxFunction)) {
+                        req.AmtAuth = Math.round(Number($("#amtAuth")[0].value) * 100);
+                    }
+
+                    if (trm.needsAmtOther(trxFunction)) {
+                        req.AmtOther = Math.round(Number($("#amtOther")[0].value) * 100);
+                    }
+
+                    if (trm.needsAuthC(trxFunction)) {
+                        req.AuthC = String($("#authC")[0].value);
+                    }
+
+                    if (trm.supportsTrxRefNum(trxFunction) && ($("#trxRefNum")[0].value !== "")) {
+                        req.TrxRefNum = String($("#trxRefNum")[0].value);
+                        req.AcqID = Number($("#acqIDSelect").val());
+                    }
+
+                    trm.setTransactionTimeout(trm.TransactionFunctions.AUTHORIZATION_PURCHASE == trxFunction ? 3600000 : 90000);
+
+                    trm.startTransaction(req);
+                    $("#abortTransactionButton").show();
+                }
+
+                $("#paymentForm").removeClass("was-validated");
+                $("#pay").hide();
+            }
+            
+            function confirmTransaction() {
+                trm.confirmTransaction({ TrxAmt: Math.round(Number($("#trxAmt")[0].value) * 100) });
+            }
+            
+            function rollbackTransaction() {
+                trm.rollbackTransaction();
+            }
+
+            function activate() {
+                checkNotBusy() && trm.activate();
+            }
+
+            function deactivate() {
+                checkNotBusy() && trm.deactivate();
+            }
+
+            function balance() {
+                checkNotBusy() && trm.balance();
+            }
+
+            function configure() {
+                checkNotBusy() && trm.configure();
+            }
+
+            function initialize(acqID) {
+                checkNotBusy() && trm.initialize(acqID);
+            }
+
+            function capture(flags) {
+                checkNotBusy() && trm.sendMessage({ BatchCaptureRequest: { BatchCaptureFlags: flags }});
+            }
+
+            function print(text) {
+                var lines = text.replace(/\\n/g, "\n").split('\n');
+
+                if (trm.StatusFlags.OUT_OF_PAPER & trmStatus) {
+                    showDialog(i18n("Out of paper"), i18("Please exchange paper roll on terminal printer"), 10000);
+                }
+                else if (trm.StatusFlags.PRINTER_UNAVAILABLE & trmStatus) {
+                    var printerWindow = window.open('', '', 'left=0,top=0,width=800,height=900,toolbar=0,scrollbars=0,status=0');
+                    printerWindow.document.write("<pre>" + lines.join('\n') + "</pre>");
+                    printerWindow.document.close();
+                    printerWindow.focus();
+                    printerWindow.print();
+                    printerWindow.close();
+                }
+                else {
+                    trm.print({ ReceiptText: lines.slice(0, 1).join('\n'), ReceiptFlags: trm.ReceiptFlags.DOUBLE_HEIGHT | trm.ReceiptFlags.MORE_DATA_AVAILABLE });
+                    trm.print({ ReceiptText: lines.slice(1).join('\n') });
+                }
+            }
+
+            function applyPrinterStatus() {
+                if (trm.StatusFlags.PRINTER_UNAVAILABLE & trmStatus)
+                    $(".print-tooltip").attr('data-original-title', i18n("Printing via browser")).tooltip("enable");
+                else if (trm.StatusFlags.OUT_OF_PAPER & trmStatus)
+                    $(".print-tooltip").attr('data-original-title', i18n("Printing via terminal - please exchange paper roll")).tooltip("enable");
+                else
+                    $(".print-tooltip").attr('data-original-title', i18n("Printing via terminal")).tooltip("enable");
+
+                applyVisibility();
+            }
+
+            function toggleAutoConfirm() {
+                trm.setAutoConfirm($("#manualConfirmation").prop('checked') == false);
+                storeSettings();
+            }
+
+            function toggleKioskMode() {
+                $("#newKioskModePassword").val("");
+                $("#repeatKioskModePassword").val("");
+                $("#kioskModePassword").val("");
+
+                if ($("#kioskMode").is(":checked"))
+                    $("#activateKioskModeDialog").modal("show");
+                else
+                    $("#deactivateKioskModeDialog").modal("show");
+            }
+
+            function applyKioskModeSetting() {
+                if (localStorage.getItem("kioskModePassword") !== null)
+                    $("#kioskMode").prop('checked', true);
+                else
+                    $("#kioskMode").prop('checked', false);
+
+                applyVisibility();
+            }
+
+            function tryActivateKioskMode() {
+                if ($("#newKioskModePassword")[0].value == $("#repeatKioskModePassword")[0].value) {
+                    var md = forge.md.sha256.create();
+                    var salt = Math.random().toString(16).substr(2, 8);
+                    var hash = md.update($("#newKioskModePassword")[0].value + salt).digest().toHex();
+
+                    localStorage.setItem("kioskModeSalt", salt);
+                    localStorage.setItem("kioskModePassword", hash);
+                }
+                else {
+                    showDialog(i18n("Error"), i18n("Passwords do not match"), 10000);
+                }
+            }
+
+            function tryDeactivateKioskMode() {
+                var md = forge.md.sha256.create();
+                var salt = localStorage.getItem("kioskModeSalt");
+                var hash =  md.update($("#kioskModePassword")[0].value + salt).digest().toHex();
+
+                if ((hash == localStorage.getItem("kioskModePassword"))
+                    || ($("#kioskModePassword")[0].value == localStorage.getItem("kioskModePassword")))
+                {
+                    localStorage.removeItem("kioskModePassword");
+                }
+            }
+
+            function storeSettings() {
+                if (typeof(Storage) !== "undefined") {
+                    localStorage.setItem("browserLanguageOnTrm", $("#browserLanguageOnTrm").is(":checked") ? "true" : "false");
+                    localStorage.setItem("printMerchantReceipts", $("#printMerchantReceipts").is(":checked") ? "true" : "false");
+                    localStorage.setItem("printCardholderReceipts", $("#printCardholderReceipts").is(":checked") ? "true" : "false");
+                    localStorage.setItem("printInfoReceipts", $("#printInfoReceipts").is(":checked") ? "true" : "false");
+                    localStorage.setItem("manualConfirmation", $("#manualConfirmation").is(":checked") ? "true" : "false");
+                }
+            }
+
+            function clearDialogTimer() {
+                if (undefined !== dialogTimer) {
+                    clearTimeout(dialogTimer);
+                    dialogTimer = undefined;
+                }
+            }
+
+            function setDialogTimer(timeout) {
+                clearDialogTimer();
+
+                if (Infinity != timeout) {
+                    dialogTimer = setTimeout(function () {
+                            hideDialog();
+                        }, timeout);
+                }
+            }
+
+            function showDialog(title, text, timeout) {
+                $("#dialogTitle")[0].innerText = title;
+                $("#dialogText")[0].innerText = text;
+
+                $("#dialog").modal("show");
+                setDialogTimer(timeout);
+            }
+            
+            function hideDialog() {
+                clearDialogTimer();
+                $("#dialog").modal("hide");
+                $('.modal-backdrop').remove();
+            }
+
+            function clearReceipts() {
+                $("#receipts").html("");
+                $("#clearReceipts").addClass("d-none");
+            }
+
+            function isBusy() {
+                return (trm !== undefined) && (((trm.StatusFlags.BUSY | trm.StatusFlags.LOCKED | trm.StatusFlags.READER_SLOT_OCCUPIED) & trmStatus) != 0);
+            }
+
+            function checkNotBusy() {
+                var result = false;
+
+                if (trm !== undefined) {
+                    if (isBusy()) {
+                        showDialog(i18n("Please wait"), i18n("Terminal is busy"), Infinity);
+                    } else {
+                        result = true;
+                    }
+                }
+
+                return result;
+            }
+
+            function pad(num, padlen, padchar) {
+                var pad_char = typeof padchar !== 'undefined' ? padchar : '0';
+                var padArray = new Array(1 + padlen).join(pad_char);
+                return (padArray + num).slice(-padArray.length);
+            }
+
+            window.addEventListener('load', function() {
+                $("#dialog").on('hidden.bs.modal', function(){
+                    $('#amtAuth').focus();
+                });
+
+                $("#pairingDialog").on('shown.bs.modal', function(){
+                    $(this).find('#pairingCode').focus();
+                });
+
+                $("#activateKioskModeDialog").on('shown.bs.modal', function(){
+                    $(this).find('#newKioskModePassword').focus();
+                });
+
+                $("#deactivateKioskModeDialog").on('shown.bs.modal', function(){
+                    $(this).find('#kioskModePassword').focus();
+                });
+
+                $('#trxFunctionSelect').change(function() {
+                    applyVisibility();
+                    applyRequiredFields();
+                });
+
+                var forms = document.getElementsByClassName('needs-validation');
+
+                var validation = Array.prototype.filter.call(forms, function(form) {
+                    form.addEventListener('submit', function(event) {
+                        if (trm.needsAmtAuth($("#trxFunctionSelect").val())) {
+                            if (form.checkValidity() === false) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                            }
+                            form.classList.add('was-validated');
+                        }
+                    }, false);
+                });
+
+                $(".i18n").each(function () {
+                    $(this).text(i18n(this.innerText));
+                    if (this.hasAttribute("title")) {
+                        this.setAttribute("title", i18n(this.getAttribute("title")));
+                    }
+                });
+            }, false);
+
+            function i18n(text) {
+                let translations = getTranslations();
+                let result = text;
+                let dictEntry = translations[text];
+
+                if (dictEntry !== undefined) {
+                    let translation = dictEntry[language];
+
+                    if (translation !== undefined) {
+                        result = translation;
+                    }                    
+                }
+
+                return result;
+            }
+
+            function getTranslations() {
+                let translations = {
+                    "Activate Kiosk Mode": {
+                        "de": "Kioskmodus aktivieren",
+                        "fr": "Activer Mode Kiosque",
+                        "it": "Attivare il Modo Kiosk"
+                    },
+                    "all": {
+                        "de": "alle",
+                        "fr": "tous",
+                        "it": "tutti"
+                    },
+                    "Browser language on terminal": {
+                        "de": "Browser-Sprache auf Terminal",
+                        "fr": "Langue du navigateur sur le terminal",
+                        "it": "Lingua del browser sul terminale"
+                    },
+                    "Confirm Transaction": {
+                        "de": "Transaktion bestätigen",
+                        "fr": "Confirmer la transaction",
+                        "it": "Conferma della transazione"
+                    },
+                    "Confirm transaction manually": {
+                        "de": "Transaktion manuell bestätigen",
+                        "fr": "Confirmer la transaction manuellement",
+                        "it": "Conferma la transazione manualmente"
+                    },
+                    "Confirmed amount:": {
+                        "de": "Bestätigter Betrag:",
+                        "fr": "Montant confirmé:",
+                        "it": "Importo confermato:"
+                    },
+                    "Deactivate Kiosk Mode": {
+                        "de": "Kioskmodus deaktivieren",
+                        "fr": "Désactiver Mode Kiosque",
+                        "it": "Disattivare il Modo Kiosk"
+                    },
+                    "Deactivation password:": {
+                        "de": "Deaktivierungskennwort:",
+                        "fr": "ot de passe de désactivation:",
+                        "it": "Password di disattivazione:"
+                    },
+                    "Enter password:": {
+                        "de": "Kennwort eingeben:",
+                        "fr": "Saisissez le mot de passe:",
+                        "it": "Inserisci password:"
+                    },
+                    "Function not supported by this browser": {
+                        "de": "Funktion wird von diesem Browser nicht unterstützt",
+                        "fr": "Fonction non prise en charge par ce navigateur",
+                        "it": "Funzione non supportata da questo browser"
+                    },
+                    "General": {
+                        "de": "Allgemein",
+                        "fr": "Général",
+                        "it": "Generale"
+                    },
+                    "Kiosk mode": {
+                        "de": "Kiosk-Modus",
+                        "fr": "Mode kiosque",
+                        "it": "Modalità chiosco"
+                    },
+                    "Language": {
+                        "de": "Sprache",
+                        "fr": "Langue",
+                        "it": "Lingua"
+                    },
+                    "Passwords do not match": {
+                        "de": "Passwörter stimmen nicht überein",
+                        "fr": "Les mots de passe ne correspondent pas",
+                        "it": "Le password non corrispondono"
+                    },
+                    "Repeat:": {
+                        "de": "Wiederholen:",
+                        "fr": "Répéter:",
+                        "it": "Ripetere:"
+                    },
+                    "Terminal is online": {
+                        "de": "Terminal ist online",
+                        "fr": "Terminal online",
+                        "it": "Terminale online"
+                    },
+                    "Transactions": {
+                        "de": "Transaktionen",
+                        "fr": "Transactions",
+                        "it": "Transazioni"
+                    },
+                    "Card has been read": {
+                        "de": "Karte wurde gelesen",
+                        "fr": "La carte a été lue",
+                        "it": "La carta è stata letta"
+                    },
+                    "Terminal is busy": {
+                        "de": "Terminal ist beschäftigt",
+                        "fr": "Le terminal est occupé",
+                        "it": "Il terminale è occupato"
+                    },
+                    "Shift is open": {
+                        "de": "Schicht geöffnet",
+                        "fr": "Terminal activé",
+                        "it": "Terminale attivo"
+                    },
+                    "Shift is closed": {
+                        "de": "Schicht geschlossen",
+                        "fr": "Terminal pas activé",
+                        "it": "Terminale non attivo"
+                    },
+                    "Connected to terminal": {
+                        "de": "Verbunden mit Terminal",
+                        "fr": "Connecté au terminal",
+                        "it": "Collegato al terminale"
+                    },
+                    "No terminal connected": {
+                        "de": "Kein Terminal angeschlossen",
+                        "fr": "Aucun terminal connecté",
+                        "it": "Nessun terminale collegato"
+                    },
+                    "Connect to terminal": {
+                        "de": "Mit Terminal verbinden",
+                        "fr": "Connecter au terminal",
+                        "it": "Collegare al terminale"
+                    },
+                    "Disconnect from terminal": {
+                        "de": "Verbindung aufheben",
+                        "fr": "Déconnecter du terminal",
+                        "it": "Scollegamento dal terminale"
+                    },
+                    "Reboot terminal": {
+                        "de": "Terminal neu starten",
+                        "fr": "Redémarrer le terminal",
+                        "it": "Riavviare il terminale"
+                    },
+                    "Update software": {
+                        "de": "SW Update",
+                        "fr": "Téléchargement",
+                        "it": "Caricare SW"
+                    },
+                    "Reload page": {
+                        "de": "Seite neu laden",
+                        "fr": "Recharger la page",
+                        "it": "Ricarica la pagina"
+                    },
+                    "Function:": {
+                        "de": "Funktion:",
+                        "fr": "Fonction:",
+                        "it": "Funzione:"
+                    },
+                    "Amount:": {
+                        "de": "Betrag:",
+                        "fr": "Montant:",
+                        "it": "Importo:"
+                    },
+                    "Invalid amount - valid values: 0.01 - 999999.99": {
+                        "de": "Ungültiger Betrag - gültige Werte: 0.01 - 999999.99",
+                        "fr": "Montant non valable - valeurs valables : 0,01 - 99999999,99",
+                        "it": "Importo non valido - valori validi: 0,01 - 99999999.99."
+                    },
+                    "Abort": {
+                        "de": "Abbruch",
+                        "fr": "Interruption",
+                        "it": "Interruzione"
+                    },
+                    "Activate terminal": {
+                        "de": "Terminal aktivieren",
+                        "fr": "Activer le terminal",
+                        "it": "Attiva terminale"
+                    },
+                    "Deactivate terminal": {
+                        "de": "Terminal deaktivieren",
+                        "fr": "Désactiver terminal",
+                        "it": "Disattiva terminale"
+                    },
+                    "Final balance": {
+                        "de": "Tagesabschluss",
+                        "fr": "Clôture journalière",
+                        "it": "Chiusura giornaliera"
+                    },
+                    "Configuration": {
+                        "de": "Konfiguration",
+                        "fr": "Configuration",
+                        "it": "Configurazione"
+                    },
+                    "Initialisation": {
+                        "de": "Initialisierung",
+                        "fr": "Initialisation",
+                        "it": "Inizializzazione"
+                    },
+                    "Device model:": {
+                        "de": "Gerätemodell:",
+                        "fr": "Modèle d'appareil:",
+                        "it": "Modello di dispositivo:"
+                    },
+                    "never": {
+                        "de": "nie",
+                        "fr": "jamais",
+                        "it": "mai"
+                    },
+                    "unknown": {
+                        "de": "unbekannt",
+                        "fr": "inconnu",
+                        "it": "sconosciuto"
+                    },
+                    "Trm-Id:": {
+                        "de": "Trm-Id:",
+                        "fr": "Trm-Id:",
+                        "it": "Trm-Id:"
+                    },
+                    "Serial number:": {
+                        "de": "Seriennummer:",
+                        "fr": "Numéro de série:",
+                        "it": "Numero di serie:"
+                    },
+                    "Software version:": {
+                        "de": "Softwareversion:",
+                        "fr": "Version du logiciel:",
+                        "it": "Versione software:"
+                    },
+                    "Submit transaction data": {
+                        "de": "Transaktionsdaten einliefern",
+                        "fr": "Soumettre des données de transaction",
+                        "it": "Inviare i dati delle transazioni"
+                    },
+                    "Processors": {
+                        "de": "Verarbeiter",
+                        "fr": "Transformateurs",
+                        "it": "Processori"
+                    },
+                    "[none]": {
+                        "de": "[keine]",
+                        "fr": "[aucun]",
+                        "it": "[nessun]"
+                    },
+                    "Means of payment": {
+                        "de": "Zahlungsmittel",
+                        "fr": "Moyens de paiement",
+                        "it": "Mezzi di pagamento"
+                    },
+                    "Transaction types": {
+                        "de": "Transaktionstypen",
+                        "fr": "Types de transaction",
+                        "it": "Tipi di transazione"
+                    },
+                    "Pairing with Terminal": {
+                        "de": "Pairing mit Terminal",
+                        "fr": "Appairage du terminal",
+                        "it": "Accoppiare il terminale"
+                    },
+                    "Please enter the pairing code:": {
+                        "de": "Bitte Pairing Code eingeben:",
+                        "fr": "Veuillez entrer le code d'appariement:",
+                        "it": "Inserire il codice di accoppiamento:"
+                    },
+                    "Error": {
+                        "de": "Fehler",
+                        "fr": "Erreur",
+                        "it": "Errore"
+                    },
+                    "Failed to connect to terminal": {
+                        "de": "Es konnte keine Verbindung zum Terminal hergestellt werden",
+                        "fr": "Aucune connexion n'a pu être établie avec le terminal",
+                        "it": "Non è stato possibile stabilire un collegamento con il terminale"
+                    },
+                    "Printer problem": {
+                        "de": "Druckerproblem",
+                        "fr": "Problème d'imprimante",
+                        "it": "Problema stampante"
+                    },
+                    "Please exchange paper roll": {
+                        "de": "Bitte Papierrolle wechseln",
+                        "fr": "Remplacer le rouleau de papier",
+                        "it": "Sostituire il rotolo di carta"
+                    },
+                    "successfully initialised: ": {
+                        "de": "erfolgreich initialisiert: ",
+                        "fr": "initialisé avec succès: ",
+                        "it": "inizializzato con successo: "
+                    },
+                    "Processing OK": {
+                        "de": "Verarbeitung OK",
+                        "fr": "Traitement OK",
+                        "it": "Elaborazione OK"
+                    },
+                    "Processing failed": {
+                        "de": "Verarbeitung fehlgeschlagen",
+                        "fr": "Erreur de traitement",
+                        "it": "Errore di elaborazione"
+                    },
+                    "Connection is being established": {
+                        "de": "Verbindung wird hergestellt",
+                        "fr": "La connexion est en cours d'établissement",
+                        "it": "La connessione è in corso di realizzazione"
+                    },
+                    "Out of paper": {
+                        "de": "Kein Papier",
+                        "fr": "Manque de papier",
+                        "it": "Carta stampante esaurita"
+                    },
+                    "Please exchange paper roll on terminal printer": {
+                        "de": "Bitte Papier am Terminaldrucker wechseln",
+                        "fr": "Remplacer le rouleau de papier sur l'imprimante du terminal",
+                        "it": "Sostituire il rotolo di carta stampante del terminale"
+                    },
+                    "Printing via browser": {
+                        "de": "Druck via Browser",
+                        "fr": "Impression par navigateur",
+                        "it": "Stampa su Browser"
+                    },
+                    "Printing via terminal - please exchange paper roll": {
+                        "de": "Druck via Terminal - bitte Papier wechseln",
+                        "fr": "Impression par terminal - échangez le rouleau de papier s.v.p.",
+                        "it": "Stampa su terminale - si prega di sostituire il rotolo di carta"
+                    },
+                    "Printing via terminal": {
+                        "de": "Druck via Terminal",
+                        "fr": "Impression par terminal",
+                        "it": "Stampa su terminale"
+                    },
+                    "Please wait": {
+                        "de": "Bitte warten",
+                        "fr": "Un instant s.v.p.",
+                        "it": "Attendere prego"
+                    },
+                    "Merchant receipts": {
+                        "de": "Händlerbelege",
+                        "fr": "Reçus du marchand",
+                        "it": "Ricevute mercante"
+                    },
+                    "Cardholder receipts": {
+                        "de": "Kundenbelege",
+                        "fr": "Reçus du client",
+                        "it": "Ricevute cliente"
+                    },
+                    "Information receipts": {
+                        "de": "Infobelege",
+                        "fr": "Reçus d'information",
+                        "it": "Ricevute di informazione"
+                    },
+                    "Automatically print receipts on terminal": {
+                        "de": "Belege automatisch auf Terminal drucken",
+                        "fr": "Impression automatique des reçus sur le terminal",
+                        "it": "Stampa automaticamente le ricevute sul terminale"
+                    },
+                    "Authorization code:": {
+                        "de": "Autorisierungsscode:",
+                        "fr": "Code autorisation:",
+                        "it": "Codice Autorizzazione:"
+                    },
+                    "Sequence counter:": {
+                        "de": "Sequenznummer:",
+                        "fr": "Compteur de séquences:",
+                        "it": "Contatore di sequenza:"
+                    },
+                    "Reference number:": {
+                        "de": "Referenznummer:",
+                        "fr": "Numéro de référence:",
+                        "it": "Numero di riferimento:"
+                    },
+                };
+                return translations;
+            }
+        </script>
+    </body>
+</html>
